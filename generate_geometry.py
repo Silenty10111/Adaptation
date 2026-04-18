@@ -24,7 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--robot-name", default="generated_multileg")
     parser.add_argument("--num-legs", type=int, default=None, help="Randomly chosen in [4, 10] when omitted.")
     parser.add_argument("--seed", type=int, default=7)
-    parser.add_argument("--leg-placement", choices=("uniform", "random"), default="uniform")
+    parser.add_argument("--leg-placement", choices=("uniform", "random"), default="random")
     parser.add_argument(
         "--leg-style",
         choices=("swing", "pendulum", "mixed"),
@@ -62,29 +62,34 @@ def make_assets_root() -> Tuple[Path, Path]:
 
 
 def create_irregular_trunk_polygon(length: float, width: float, rng: np.random.Generator) -> Polygon:
-    """Create an irregular convex polygon by trimming the four rectangle corners."""
-    trim_x = rng.uniform(length * 0.06, length * 0.18, size=4)
-    trim_y = rng.uniform(width * 0.06, width * 0.18, size=4)
+    """Create a noticeably irregular trunk outline with random convex asymmetry."""
     half_length = length / 2.0
     half_width = width / 2.0
 
-    vertices = np.array(
-        [
-            [-half_length + trim_x[0], -half_width],
-            [half_length - trim_x[1], -half_width],
-            [half_length, -half_width + trim_y[1]],
-            [half_length, half_width - trim_y[2]],
-            [half_length - trim_x[2], half_width],
-            [-half_length + trim_x[3], half_width],
-            [-half_length, half_width - trim_y[3]],
-            [-half_length, -half_width + trim_y[0]],
-        ],
-        dtype=float,
-    )
-    polygon = orient(Polygon(vertices), sign=1.0)
-    if not polygon.is_valid or polygon.area <= 0.0:
-        raise RuntimeError("Failed to generate a valid trunk polygon.")
-    return polygon
+    for _ in range(12):
+        vertex_count = int(rng.integers(11, 16))
+        angles = np.sort(rng.uniform(0.0, 2.0 * np.pi, size=vertex_count))
+        base_x = half_length * rng.uniform(0.82, 1.08)
+        base_y = half_width * rng.uniform(0.82, 1.08)
+        radial_noise = rng.uniform(0.70, 1.28, size=vertex_count)
+        wobble = 1.0 + 0.14 * np.sin(3.0 * angles + rng.uniform(0.0, 2.0 * np.pi))
+        wobble += 0.08 * np.cos(5.0 * angles + rng.uniform(0.0, 2.0 * np.pi))
+        radii = radial_noise * wobble
+
+        vertices = np.column_stack(
+            [
+                np.cos(angles) * base_x * radii,
+                np.sin(angles) * base_y * radii,
+            ]
+        )
+        vertices[:, 0] += rng.uniform(-length * 0.03, length * 0.03)
+        vertices[:, 1] += rng.uniform(-width * 0.03, width * 0.03)
+
+        polygon = orient(Polygon(vertices).convex_hull, sign=1.0)
+        if polygon.is_valid and polygon.area > 0.0 and len(polygon.exterior.coords) >= 7:
+            return polygon
+
+    raise RuntimeError("Failed to generate a valid trunk polygon.")
 
 
 def extrude_trunk_mesh(polygon: Polygon, body_height: float) -> trimesh.Trimesh:
@@ -113,7 +118,15 @@ def compute_mount_points(
     if placement == "uniform":
         distances = np.linspace(0.0, cumulative, count, endpoint=False) + cumulative / (2.0 * count)
     else:
-        distances = np.sort(rng.uniform(0.0, cumulative, size=count))
+        cluster_count = int(rng.integers(2, min(5, count) + 1))
+        cluster_centers = rng.uniform(0.0, cumulative, size=cluster_count)
+        cluster_spread = cumulative / (7.0 + 1.5 * cluster_count)
+        distances = []
+        for _ in range(count):
+            center = cluster_centers[int(rng.integers(0, cluster_count))]
+            distance = (center + rng.normal(0.0, cluster_spread)) % cumulative
+            distances.append(distance)
+        distances = np.sort(np.asarray(distances, dtype=float))
 
     centroid = np.array([polygon.centroid.x, polygon.centroid.y], dtype=float)
     mount_data: List[Dict[str, List[float]]] = []
@@ -203,16 +216,17 @@ def build_leg_vectors(
     rng: np.random.Generator,
 ) -> Tuple[np.ndarray, np.ndarray]:
     inward = np.array([inward_xy[0], inward_xy[1], 0.0], dtype=float)
+    outward = -inward
     tangent = np.array([tangent_xy[0], tangent_xy[1], 0.0], dtype=float)
     down = np.array([0.0, 0.0, -1.0], dtype=float)
     side = rng.choice([-1.0, 1.0])
 
     if leg_type == "swing":
-        upper_direction = normalize(0.24 * inward + 0.12 * side * tangent + 1.0 * down)
-        lower_direction = normalize(0.10 * inward - 0.05 * side * tangent + 1.0 * down)
+        upper_direction = normalize(0.90 * outward + 0.30 * side * tangent + 0.12 * down)
+        lower_direction = normalize(0.16 * outward - 0.12 * side * tangent + 1.00 * down)
     else:
-        upper_direction = normalize(0.22 * inward + 1.0 * down)
-        lower_direction = normalize(0.08 * inward + 1.0 * down)
+        upper_direction = normalize(0.94 * outward + 0.18 * side * tangent + 0.08 * down)
+        lower_direction = normalize(0.10 * outward + 0.08 * side * tangent + 1.00 * down)
 
     return upper_direction * upper_length, lower_direction * lower_length
 

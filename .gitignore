@@ -1,0 +1,18 @@
+# Python caches
+__pycache__/
+*.pyc
+
+# Generated 3D meshes and URDF files
+meshes/
+*.stl
+*.obj
+*.urdf
+
+# Reinforcement learning training artifacts
+logs/
+*.pt
+*.onnx
+
+# Isaac Sim and local virtual environments
+venv/
+.conda/
