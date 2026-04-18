@@ -1,3 +1,4 @@
+# pyright: reportGeneralTypeIssues=false
 #!/usr/bin/env python3
 """Generate a generalized multi-legged robot geometry and physical metadata."""
 
