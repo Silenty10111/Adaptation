@@ -2,3 +2,5 @@ numpy>=1.24
 shapely>=2.0
 trimesh>=4.0
 mapbox-earcut>=1.0
+pybullet>=3.2
+# Isaac Gym is installed separately from NVIDIA package (see README.md).

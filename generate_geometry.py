@@ -61,20 +61,53 @@ def make_assets_root() -> Tuple[Path, Path]:
     return assets_root, meshes_root
 
 
+def polygon_has_concavity(polygon: Polygon, tolerance: float = 1e-9) -> bool:
+    coords = np.asarray(polygon.exterior.coords[:-1], dtype=float)
+    if len(coords) < 4:
+        return False
+
+    for idx in range(len(coords)):
+        prev_pt = coords[idx - 1]
+        curr_pt = coords[idx]
+        next_pt = coords[(idx + 1) % len(coords)]
+        edge_a = curr_pt - prev_pt
+        edge_b = next_pt - curr_pt
+        cross_z = edge_a[0] * edge_b[1] - edge_a[1] * edge_b[0]
+        if cross_z < -tolerance:
+            return True
+
+    return False
+
+
 def create_irregular_trunk_polygon(length: float, width: float, rng: np.random.Generator) -> Polygon:
-    """Create a noticeably irregular trunk outline with random convex asymmetry."""
+    """Create a noticeably irregular trunk outline with controlled concave notches."""
     half_length = length / 2.0
     half_width = width / 2.0
 
-    for _ in range(12):
-        vertex_count = int(rng.integers(11, 16))
+    for _ in range(24):
+        vertex_count = int(rng.integers(13, 20))
         angles = np.sort(rng.uniform(0.0, 2.0 * np.pi, size=vertex_count))
         base_x = half_length * rng.uniform(0.82, 1.08)
         base_y = half_width * rng.uniform(0.82, 1.08)
-        radial_noise = rng.uniform(0.70, 1.28, size=vertex_count)
+        radial_noise = rng.uniform(0.78, 1.24, size=vertex_count)
         wobble = 1.0 + 0.14 * np.sin(3.0 * angles + rng.uniform(0.0, 2.0 * np.pi))
         wobble += 0.08 * np.cos(5.0 * angles + rng.uniform(0.0, 2.0 * np.pi))
         radii = radial_noise * wobble
+
+        # Inject one or more inward notches so the trunk is not purely convex.
+        notch_count = int(rng.integers(1, 4))
+        notch_indices = rng.choice(vertex_count, size=notch_count, replace=False)
+        for notch_idx in np.atleast_1d(notch_indices):
+            notch_scale = float(rng.uniform(0.35, 0.62))
+            radii[notch_idx] *= notch_scale
+            left_idx = (int(notch_idx) - 1) % vertex_count
+            right_idx = (int(notch_idx) + 1) % vertex_count
+            shoulder_scale = float(rng.uniform(0.72, 0.88))
+            radii[left_idx] *= shoulder_scale
+            radii[right_idx] *= shoulder_scale
+
+        min_radius = 0.22
+        radii = np.clip(radii, min_radius, None)
 
         vertices = np.column_stack(
             [
@@ -85,8 +118,13 @@ def create_irregular_trunk_polygon(length: float, width: float, rng: np.random.G
         vertices[:, 0] += rng.uniform(-length * 0.03, length * 0.03)
         vertices[:, 1] += rng.uniform(-width * 0.03, width * 0.03)
 
-        polygon = orient(Polygon(vertices).convex_hull, sign=1.0)
-        if polygon.is_valid and polygon.area > 0.0 and len(polygon.exterior.coords) >= 7:
+        polygon = orient(Polygon(vertices), sign=1.0)
+        if (
+            polygon.is_valid
+            and polygon.area > length * width * 0.18
+            and len(polygon.exterior.coords) >= 8
+            and polygon_has_concavity(polygon)
+        ):
             return polygon
 
     raise RuntimeError("Failed to generate a valid trunk polygon.")
