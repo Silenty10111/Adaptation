@@ -115,9 +115,11 @@ def lock_robot_joints(robot_id: int, hold_force: float = 50.0) -> None:
 
 
 def set_robot_alpha(robot_id: int, alpha: float) -> None:
-    p.changeVisualShape(robot_id, -1, rgbaColor=[1.0, 1.0, 1.0, alpha])
-    for joint_index in range(p.getNumJoints(robot_id)):
-        p.changeVisualShape(robot_id, joint_index, rgbaColor=[1.0, 1.0, 1.0, alpha])
+    visual_data = p.getVisualShapeData(robot_id)
+    for item in visual_data:
+        link_index = int(item[1])
+        rgba = item[7] if len(item) > 7 else (1.0, 1.0, 1.0, 1.0)
+        p.changeVisualShape(robot_id, link_index, rgbaColor=[rgba[0], rgba[1], rgba[2], alpha])
 
 
 def focus_camera(target_pos: Tuple[float, float, float]) -> None:
@@ -147,7 +149,7 @@ def main() -> None:
 
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     p.setGravity(0, 0, -9.81)
-    p.loadURDF("plane.urdf")
+    plane_id = p.loadURDF("plane.urdf")
 
     model_ids: List[int] = []
     model_names: List[str] = []

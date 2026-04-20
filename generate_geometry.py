@@ -128,6 +128,22 @@ def compute_mount_points(
             distances.append(distance)
         distances = np.sort(np.asarray(distances, dtype=float))
 
+        # Keep neighboring hip mounts apart to reduce self-intersection near the trunk.
+        min_gap = cumulative / max(1.0, count * 1.6)
+        adjusted: List[float] = []
+        for distance in distances:
+            candidate = float(distance)
+            if adjusted:
+                candidate = max(candidate, adjusted[-1] + min_gap)
+            adjusted.append(candidate)
+
+        overflow = adjusted[-1] - cumulative
+        if overflow > 0.0:
+            adjusted = [value - overflow for value in adjusted]
+
+        distances = np.asarray([value % cumulative for value in adjusted], dtype=float)
+        distances.sort()
+
     centroid = np.array([polygon.centroid.x, polygon.centroid.y], dtype=float)
     mount_data: List[Dict[str, List[float]]] = []
 
@@ -293,7 +309,10 @@ def assemble_robot(args: argparse.Namespace) -> Dict[str, object]:
             leg_type,
             rng,
         )
-        attach = np.array([point_xy[0], point_xy[1], hip_z], dtype=float)
+        outward_xy = -np.asarray(inward_xy, dtype=float)
+        attach_clearance = args.joint_radius * 0.55 + args.link_radius * 0.35
+        attach_xy = np.asarray(point_xy, dtype=float) + outward_xy * attach_clearance
+        attach = np.array([attach_xy[0], attach_xy[1], hip_z], dtype=float)
         knee_world = attach + upper_vector
         foot_world = knee_world + lower_vector
         lift_axis = normalize([tangent_xy[0], tangent_xy[1], 0.0])
