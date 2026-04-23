@@ -268,6 +268,11 @@ def run_cmd(args: list[str]) -> None:
     subprocess.run(args, check=True)
 
 
+def run_cmd_ok(args: list[str]) -> bool:
+    """Return True on success, False on non-zero exit (e.g. SSM pre-check fail)."""
+    return subprocess.run(args).returncode == 0
+
+
 def clone_generated_assets(repo_root: Path, variant_dir: Path) -> Path:
     src_urdf = repo_root / "robot_assets" / "generated_robot.urdf"
     src_mesh_dir = repo_root / "robot_assets" / "meshes"
@@ -324,11 +329,16 @@ def ensure_unique_variants(repo_root: Path, num_required: int, auto_generate: bo
     needed = num_required - len(urdfs)
     print(f"[INFO] Found {len(urdfs)} unique variants, generating {needed} more...")
 
-    for _ in range(needed):
-        seed = 7 + next_index * 17
-        name = f"variant_{next_index:02d}_seed{seed}"
+    seed_offset = 0   # increments every attempt; next_index increments only on success
+    max_attempts = needed * 20
+    attempts = 0
 
-        run_cmd(
+    while len(list_variant_urdfs(variants_root)) < num_required and attempts < max_attempts:
+        seed = 7 + (next_index + seed_offset) * 17
+        name = f"variant_{next_index:02d}_seed{seed}"
+        attempts += 1
+
+        ok = run_cmd_ok(
             [
                 GEN_PYTHON,
                 str(repo_root / "generate_geometry.py"),
@@ -340,10 +350,15 @@ def ensure_unique_variants(repo_root: Path, num_required: int, auto_generate: bo
                 "random",
             ]
         )
-        run_cmd([GEN_PYTHON, str(repo_root / "generate_urdf.py")])
+        if not ok:
+            print(f"[SKIP] seed={seed} 未通过 SSM 预检，跳过。")
+            seed_offset += 1
+            continue
 
+        run_cmd([GEN_PYTHON, str(repo_root / "generate_urdf.py")])
         clone_generated_assets(repo_root, variants_root / name)
         next_index += 1
+        seed_offset += 1
 
     urdfs = list_variant_urdfs(variants_root)
     if len(urdfs) < num_required:

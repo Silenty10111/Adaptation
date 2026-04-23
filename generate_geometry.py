@@ -291,6 +291,64 @@ def select_leg_type(requested_style: str, leg_index: int, rng: np.random.Generat
     return requested_style
 
 
+def validate_foot_layout_ssm(
+    foot_positions_xy: List[List[float]],
+    trunk_com_xy: Sequence[float] = (0.0, 0.0),
+    threshold: float = 0.0,
+) -> None:
+    """SSM pre-check using foot XY positions before any mesh file is written.
+
+    Called after all leg vectors are computed but before disk I/O, so a failed
+    check aborts the entire generation without leaving partial STL artefacts.
+
+    Parameters
+    ----------
+    foot_positions_xy : list of [x, y]  World-frame foot contact XY positions.
+    trunk_com_xy      : [x, y]          Trunk CoM estimate (default [0,0] as the
+                                        trunk polygon is generated around origin).
+    threshold         : float           Minimum acceptable SSM in metres.
+
+    Raises
+    ------
+    SystemExit  If SSM < threshold.
+    """
+    try:
+        from stability import compute_ssm
+    except ImportError:
+        print("[SSM] stability 模块未找到，跳过足端布局预检。")
+        return
+
+    pts = np.array(foot_positions_xy, dtype=float)
+    com = np.array(trunk_com_xy, dtype=float)
+
+    # Build CCW convex hull of foot positions
+    try:
+        from shapely.geometry import MultiPoint
+        from shapely.geometry import Polygon as ShapelyPolygon
+
+        hull_geom = MultiPoint([tuple(p) for p in pts]).convex_hull
+        if isinstance(hull_geom, ShapelyPolygon):
+            polygon_xy = np.array(hull_geom.exterior.coords[:-1], dtype=float)
+        else:
+            polygon_xy = pts
+    except ImportError:
+        center = pts.mean(axis=0)
+        angles = np.arctan2(pts[:, 1] - center[1], pts[:, 0] - center[0])
+        polygon_xy = pts[np.argsort(angles)]
+
+    ssm = compute_ssm(polygon_xy, com)
+    status = "PASS" if ssm >= threshold else "FAIL"
+    print(f"[SSM] 足端布局预检（生成前）  SSM = {ssm:.4f} m  [{status}]")
+    print(f"[SSM]   足端数量 = {len(pts)}， 躯干质心估算 = {list(trunk_com_xy)}")
+
+    if ssm < threshold:
+        raise SystemExit(
+            f"\n[SSM] 足端布局静态稳定性检验不通过：SSM = {ssm:.4f} m < 阈值 {threshold} m\n"
+            "      躯干质心投影在足端支撑凸包外，不会生成任何 STL/JSON 文件。\n"
+            "      请调整 --leg-placement、--num-legs 或 --seed 后重新运行。"
+        )
+
+
 def print_link_summary(link: Dict[str, object]) -> None:
     props = link["mass_properties"]
     inertia = np.asarray(props["inertia"], dtype=float)
@@ -317,23 +375,11 @@ def assemble_robot(args: argparse.Namespace) -> Dict[str, object]:
     joints: List[Dict[str, object]] = []
     assembled_meshes: List[trimesh.Trimesh] = []
 
-    trunk_relative_mesh = f"{MESH_DIR_NAME}/trunk.stl"
-    base_link = link_record(
-        name="base_link",
-        mesh=trunk_mesh,
-        density=args.density,
-        mesh_relative_path=trunk_relative_mesh,
-        meshes_root=meshes_root,
-        leg_id=None,
-        role="trunk",
-        world_origin=[0.0, 0.0, 0.0],
-    )
-    links.append(base_link)
-    assembled_meshes.append(trunk_mesh.copy())
-
     mount_points = compute_mount_points(polygon, num_legs, args.leg_placement, rng)
     hip_z = -args.body_height / 2.0
 
+    # ---- Phase 1: compute all leg geometry — no disk I/O, rng consumed here ----
+    leg_specs: List[Dict[str, object]] = []
     for leg_index, mount in enumerate(mount_points):
         point_xy = mount["point_xy"]
         tangent_xy = mount["tangent_xy"]
@@ -354,6 +400,47 @@ def assemble_robot(args: argparse.Namespace) -> Dict[str, object]:
         knee_world = attach + upper_vector
         foot_world = knee_world + lower_vector
         lift_axis = normalize([tangent_xy[0], tangent_xy[1], 0.0])
+        swing_limits = [-0.55, 0.55] if leg_type == "swing" else [-0.12, 0.12]
+        leg_specs.append({
+            "leg_index": leg_index,
+            "leg_type": leg_type,
+            "attach": attach,
+            "upper_vector": upper_vector,
+            "lower_vector": lower_vector,
+            "knee_world": knee_world,
+            "foot_world": foot_world,
+            "lift_axis": lift_axis,
+            "swing_limits": swing_limits,
+        })
+
+    # ---- Phase 2: SSM pre-check (before any file is written to disk) ----
+    foot_positions_xy = [spec["foot_world"][:2].tolist() for spec in leg_specs]  # type: ignore[index]
+    validate_foot_layout_ssm(foot_positions_xy, trunk_com_xy=[0.0, 0.0])
+
+    # ---- Phase 3: export trunk mesh then all leg meshes ----
+    trunk_relative_mesh = f"{MESH_DIR_NAME}/trunk.stl"
+    base_link = link_record(
+        name="base_link",
+        mesh=trunk_mesh,
+        density=args.density,
+        mesh_relative_path=trunk_relative_mesh,
+        meshes_root=meshes_root,
+        leg_id=None,
+        role="trunk",
+        world_origin=[0.0, 0.0, 0.0],
+    )
+    links.append(base_link)
+    assembled_meshes.append(trunk_mesh.copy())
+
+    for spec in leg_specs:
+        leg_index = spec["leg_index"]
+        attach = spec["attach"]
+        upper_vector = spec["upper_vector"]
+        lower_vector = spec["lower_vector"]
+        knee_world = spec["knee_world"]
+        foot_world = spec["foot_world"]
+        lift_axis = spec["lift_axis"]
+        swing_limits = spec["swing_limits"]
         swing_axis = np.array([0.0, 0.0, 1.0], dtype=float)
 
         hip_name = f"leg_{leg_index}_hip"
@@ -396,7 +483,6 @@ def assemble_robot(args: argparse.Namespace) -> Dict[str, object]:
             world_mesh.apply_translation(world_origin)
             assembled_meshes.append(world_mesh)
 
-        swing_limits = [-0.55, 0.55] if leg_type == "swing" else [-0.12, 0.12]
         joints.extend(
             [
                 {

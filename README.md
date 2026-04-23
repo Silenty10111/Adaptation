@@ -6,11 +6,17 @@
 
 本次工作新增了“阶段一 + 阶段二”的自适应规划能力，目标是在随机多边形形态生成之后，自动重新定义机器人前进方向，并给出分组步态控制结果。
 
-新增文件与作用如下：
+本仓库所有文件作用如下：
 
-- `adaptive_gait.py`：实现虚拟身体轴线估计、支撑安全走廊提取、头尾方向判定、质心平移代偿、腿分组与拓扑屏蔽。
-- `plan_gait.py`：命令行入口，直接读取 `robot_description.json` 并输出规划结果。
-- `import_isaac.py`：接入规划结果，在 Isaac Sim 中打印完整步态规划摘要，并用分组结果生成宏观摆腿示例。
+| 文件 | 运行环境 | 作用 |
+|---|---|---|
+| `generate_geometry.py` | 普通 Python 环境（Adaptation） | **几何与物理参数生成器**：根据参数随机生成多边形躯干轮廓，计算腿挂载点、各链杆 STL 网格及质量惯性张量，输出 `robot_description.json`。 |
+| `generate_urdf.py` | 普通 Python 环境（Adaptation） | **URDF 构建器**：读取 `robot_description.json`，先做 CGPM/SSM 静态稳定性门控，通过后才将几何与关节数据写成标准 URDF 文件（`generated_robot.urdf`）。 |
+| `stability.py` | 任意环境 | **静态稳定性独立模块**：封装 CGPM/SSM 四个子函数，供 `generate_urdf.py` 调用，也可单独导入使用。 |
+| `adaptive_gait.py` | 普通 Python 环境（Adaptation） | **自适应步态规划核心**：实现虚拟身体轴线估计、支撑安全走廊提取、头尾方向判定、质心平移代偿、腿分组与拓扑屏蔽。 |
+| `plan_gait.py` | 普通 Python 环境（Adaptation） | **命令行规划入口**：直接读取 `robot_description.json` 并输出规划结果 JSON。 |
+| `import_isaac.py` | **unitree-rl 环境**（含 Isaac Gym） | **Isaac Gym 仿真入口**：加载 URDF，执行分组交替周期步态控制，绘制前进方向地面箭头，输出稳定性与力矩裕度诊断。 |
+| `test_gym.py` | **unitree-rl 环境**（含 Isaac Gym） | **Isaac Gym 静态加载验证**：批量加载多个变体 URDF，验证模型可正确导入并保持站立姿态。 |
 
 ## 2. 环境要求
 
@@ -57,7 +63,55 @@ export PYTHONPATH=/data/code/yjh/isaacgym/python:${PYTHONPATH}
 export LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib:${LD_LIBRARY_PATH}
 ```
 
+### 双环境分工说明
+
+本项目需要**两套独立的 Python 环境**，分工如下：
+
+| 环境名 | Python 版本 | 用途 | 包含 |
+|---|---|---|---|
+| `Adaptation`（或系统 Python） | 3.10+ | 几何生成、步态规划 | numpy / trimesh / shapely / pybullet |
+| `unitree-rl` | **3.8**（Isaac Gym 要求） | Isaac Gym 仿真 | 上述所有包 + isaacgym |
+
+> **为什么需要两套环境？**  
+> Isaac Gym 官方仅支持 Python 3.8，而 trimesh / shapely 的最新版在 3.10+ 下性能更好。  
+> `generate_geometry.py` 和 `plan_gait.py` 不依赖 Isaac Gym，可在任意普通环境运行。  
+> `import_isaac.py` 和 `test_gym.py` **必须在 `unitree-rl` 环境中运行**，否则无法导入 `isaacgym`。
+
+**普通环境（Adaptation）安装额外依赖：**
+
+```bash
+conda create -n Adaptation python=3.10 -y
+conda activate Adaptation
+pip install -r requirements.txt
+```
+
+**切换到 unitree-rl 环境运行仿真：**
+
+```bash
+# 不激活 conda，直接使用完整路径指定解释器
+LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib /data/conda/envs/unitree-rl/bin/python import_isaac.py
+```
+
 ## 4. 资产生成
+
+### `generate_geometry.py` — 几何与物理参数生成器
+
+该脚本是**机器人形态生成的第一步**，不依赖 Isaac Gym，在普通环境即可运行。主要功能：
+
+- 使用 `shapely` 随机生成带凹口的多边形躯干轮廓（可控体长、体宽、凸凹程度）。
+- 沿躯干多边形边缘计算腿挂载点，支持 `uniform`（均匀）和 `random`（聚类）两种分布模式。
+- 使用 `trimesh` 生成各链杆的 STL 网格文件（hip / upper_link / lower_link / foot 等）。
+- 按设定密度自动计算每个链杆的质量、质心坐标和惯性张量。
+- 将全部几何与物理参数写入 `robot_assets/robot_description.json`，供后续流程使用。
+
+### `generate_urdf.py` — URDF 构建器（备用 SSM 安全限）
+
+该脚本是**机器人形态生成的第二步**，读取 `robot_description.json` 并输出 URDF 文件。主要功能：
+
+- **备用 SSM 安全限**：当 `robot_description.json` 是由外部工具生成或手工编辑时，调用 `stability.validate_static_stability_before_export()` 做二次核检，SSM < 0 则中止导出。正常通过 `generate_geometry.py` 生成的文件已经通过了第一道阈值检验。
+- 将链杆的惯性参数、STL 网格路径、关节类型（revolute / fixed）、关节限位、阻尼摩擦等信息按 URDF 标准格式写出。
+- **Isaac Gym 导入的是 URDF 文件**（`generated_robot.urdf`），STL 网格文件是 URDF 内部引用的资产，不直接传入 Isaac Gym。
+- 将 `urdf_path` 字段回写到 `robot_description.json`，保持数据一致。
 
 在仓库根目录执行：
 
@@ -72,7 +126,116 @@ python generate_urdf.py
 - `robot_assets/generated_robot.urdf`
 - `robot_assets/robot_description.json`
 
-## 5. 阶段一：虚拟身体轴线与头尾方向确定
+## 4a. 静态稳定性检验（CGPM / SSM）
+
+### 原理：重心投影法（CGPM）
+
+重心投影法（Centre of Gravity Projection Method，CGPM）是多足机器人静态稳定性分析中最常用的判据之一（McGhee & Frank 1968）。核心思路是：**将机器人总质心投影到水平面，判断该投影点是否落在足端支撑多边形内部**。
+
+### 静态稳定裕度（SSM）公式推导
+
+**第一步：计算总质心 XY 投影**
+
+设机器人共有 $M$ 个刚体链节，第 $k$ 个链节质量为 $m_k$，其质心在世界坐标系下的坐标为 $\mathbf{c}_k = (c_{k,x},\ c_{k,y},\ c_{k,z})$，则复合质心投影为：
+
+$$
+\mathbf{P}_{xy} = \frac{\sum_{k=1}^{M} m_k \cdot \mathbf{c}_k^{xy}}{\sum_{k=1}^{M} m_k}
+$$
+
+其中 $\mathbf{c}_k^{xy} = (c_{k,x},\ c_{k,y})$。
+
+**第二步：计算支撑多边形**
+
+取所有触地足端位置的 XY 坐标，对该点集计算凸包，得到 CCW（逆时针）顶点序列 $\mathbf{V}_0, \mathbf{V}_1, \ldots, \mathbf{V}_{n-1}$，即支撑多边形 $S$。
+
+**第三步：多边形有向边距离**
+
+对每条有向边 $e_i = \mathbf{V}_i \to \mathbf{V}_{i+1}$（下标模 $n$），定义从 $\mathbf{P}_{xy}$ 到该边的有符号距离：
+
+$$
+d_i = \frac{(\mathbf{V}_{i+1} - \mathbf{V}_i) \times (\mathbf{P}_{xy} - \mathbf{V}_i)}{|\mathbf{V}_{i+1} - \mathbf{V}_i|}
+$$
+
+其中 $\times$ 为二维标量叉积：$\mathbf{u} \times \mathbf{v} = u_x v_y - u_y v_x$。
+
+对于 CCW 多边形，当 $\mathbf{P}_{xy}$ 位于边的左侧（即内侧）时 $d_i > 0$。
+
+**第四步：SSM 定义**
+
+$$
+\boxed{\text{SSM} = \min_{i=0}^{n-1} d_i}
+$$
+
+| SSM 取值 | 物理含义 |
+|---|---|
+| SSM > 0 | 质心投影严格在支撑域内，静态稳定 |
+| SSM = 0 | 质心投影正好在支撑域边界，临界状态 |
+| SSM < 0 | 质心投影在支撑域外，静态不稳定 |
+
+### 生成门控机制（共两道检验）
+
+**第一道：`generate_geometry.py` 内嵌预检（主门控）**
+
+在 `assemble_robot()` 中，生成流程分三阶段：
+
+1. **阶段一：几何计算**——消耗随机数，计算所有腿的挂载点、色界点、**足端世界坐标**，不写任何文件。
+2. **阶段二：SSM 预检**——调用 `validate_foot_layout_ssm()`，以足端 XY 凸包为支撑多边形、躯干质心估算为 $[0,0]$，计算 SSM。**SSM < 0 则立即中止，不会写出任何 STL、JSON 或 URDF 文件。**
+3. **阶段三：导出网格**——检验通过后才批量写出 STL 网格、计算质量慢性参数、生成 `robot_description.json`。
+
+**第二道：`generate_urdf.py` 备用安全限**
+
+对手动编辑或外部工具产生的 `robot_description.json`，调用 `stability.validate_static_stability_before_export()`，SSM < 0 则中止导出 URDF。
+
+`stability.py` 提供的函数均独立封装，可单独调用：
+
+```python
+from stability import evaluate_ssm
+result = evaluate_ssm(description, threshold=0.0)
+print(result["ssm"], result["passed"])
+```
+
+## 4b. 前进方向计算原理
+
+前进方向计算分两个阶段，完整实现位于 `adaptive_gait.py`。
+
+### 阶段一：PCA 初始轴
+
+设共有 $L$ 条有效支撑腿，第 $i$ 条腿的足端 XY 坐标为 $\mathbf{f}_i$，权重为 $w_i$（支撑腿 1.0，近支撑腿 0.35）。
+
+**支撑中心：**
+$$
+\mathbf{C}_{\text{os}} = \frac{\sum_i w_i \mathbf{f}_i}{\sum_i w_i}
+$$
+
+**加权协方差矩阵：**
+$$
+\Sigma = \frac{1}{\sum_i w_i} \sum_i w_i (\mathbf{f}_i - \mathbf{C}_{\text{os}})(\mathbf{f}_i - \mathbf{C}_{\text{os}})^\top
+$$
+
+**PCA 初始轴：**  对 $\Sigma$ 做特征值分解，取最大特征值对应特征向量 $\hat{\mathbf{u}}$ 作为初始候选前向轴。
+
+### 阶段二：驱动力评分选方向
+
+对两个候选方向 $\hat{k} \in \{+\hat{\mathbf{u}},\ -\hat{\mathbf{u}}\}$ 分别评分：
+
+$$
+s_k = \sum_{\text{腿} i} \max\!\left(\hat{k} \cdot \hat{\mathbf{v}}_i,\ 0\right) \cdot \|\mathbf{v}_i\| \cdot w_{\text{phase},i} \cdot w_{\text{range},i}
+$$
+
+其中：
+- $\mathbf{v}_i$：第 $i$ 条腿的摆动向量（用户提供或自动生成）
+- $\hat{\mathbf{v}}_i = \mathbf{v}_i / \|\mathbf{v}_i\|$
+- $w_{\text{phase},i}$：相位增益，摆动/抬腿/落腿相取 1.15，支撑相取 0.75
+- $w_{\text{range},i}$：关节范围增益 $= 1 + \min(\Delta\theta_i,\ 1.2)$，$\Delta\theta_i$ 为摆动关节角度范围（rad）
+
+**最终前向轴：**
+$$
+\hat{\mathbf{d}} = \arg\max_{\hat{k} \in \{\pm\hat{\mathbf{u}}\}} s_k
+$$
+
+### 前进方向可视化
+
+在 Isaac Gym 有 Viewer 模式下，`import_isaac.py` 每帧调用 `draw_forward_direction_line()`，在地面上绘制一个**橙色箭头**（三条 debug 线段：轴杆 + 两个箭头翼），箭尾跟踪机器人 base_link 的实时 XY 坐标，箭头朝向 `final_forward_axis`。
 
 ### 5.1 基于足端点云的初始对称轴提取
 
@@ -236,8 +399,34 @@ LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib /data/conda/envs/unitree-rl/bin/
 - 自动计算自适应步态规划结果。
 - 打印完整规划摘要 JSON。
 - 选择一个有效分组作为当前宏动作组。
-- 对组内各腿下发 `lift -> swing -> drop` 的示例控制序列。
-- 直接在 Isaac Gym 中加载 URDF 并执行位置控制仿真。
+- 使用分组交替相位生成连续周期控制序列（不再只发送一次静态目标）。
+- 直接在 Isaac Gym 中加载 URDF 并执行平地直线推进仿真。
+- 输出静稳定性与力矩裕度诊断结果，用于区分“静稳不足”与“驱动不足”。
+
+平地直线推进推荐参数：
+
+```bash
+LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib /data/conda/envs/unitree-rl/bin/python import_isaac.py \
+	--headless --steps 2400 \
+	--gait-frequency 0.85 \
+	--swing-ratio-amplitude 0.26 \
+	--stance-lift-ratio 0.54 --swing-lift-ratio 0.78 \
+	--stance-drop-ratio 0.90 --swing-drop-ratio 0.38
+```
+
+新增参数说明：
+
+- `--body-height`：初始机身高度，过低时容易起步碰撞。
+- `--gait-frequency`：步态频率（Hz）。
+- `--swing-ratio-amplitude`：摆动关节围绕中位点的摆幅比例。
+- `--stance-lift-ratio` / `--swing-lift-ratio`：支撑相/摆动相抬腿关节目标比例。
+- `--stance-drop-ratio` / `--swing-drop-ratio`：支撑相/摆动相落腿关节目标比例。
+
+诊断指标解释：
+
+- `static_margin_xy < 0`：质心投影在支撑域外，静稳定性存在问题。
+- `drop_torque_margin_ratio < 1`：估算腿部关节力矩不足。
+- `trunk_mass_ratio > 0.75`：躯干质量占比偏高，动态步态下更易过载。
 
 说明：
 
@@ -272,6 +461,13 @@ LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib /data/conda/envs/unitree-rl/bin/
 - 为锁死腿、缺失腿、无效腿实现拓扑屏蔽规则。
 - 为现有 Isaac Sim 宏控制示例接入新的分组规划结果。
 - 将 README 全量改为中文，并补充算法说明、输入输出说明和使用示例。
+- 在 Isaac Gym 控制脚本中新增分组交替的连续周期步态控制，用于平地直线推进。
+- 在 Isaac Gym 控制脚本中新增静稳定性/质量分配/关节力矩裕度诊断输出。
+- 新建 `stability.py`：独立封装 CGPM/SSM 四个子函数（CoM投影、支撑凸包、SSM计算、评估入口），含公式推导注释。
+- `generate_urdf.py` 新增生成前 SSM 门控：SSM < 0 时中止导出，返回错误提示。
+- `import_isaac.py` 新增 `draw_forward_direction_line()`：每帧在地面绘制橙色箭头标注机器人前进方向。
+- `import_isaac.py` 移除重复的 `estimate_static_margin`，统一使用 `stability.py` 模块计算。
+- README 新增 4a（CGPM/SSM 公式推导）与 4b（前进方向计算原理与公式）两节。
 
 ## 11. 机器环境备注
 

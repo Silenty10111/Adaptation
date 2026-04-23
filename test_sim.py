@@ -17,7 +17,7 @@ import pybullet_data
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--count", type=int, default=5, help="需要生成并展示的机器人数量。")
+    parser.add_argument("--count", type=int, default=20, help="需要生成并展示的机器人数量。")
     parser.add_argument("--seed-base", type=int, default=7, help="第一个模型使用的随机种子。")
     parser.add_argument("--seed-step", type=int, default=17, help="相邻模型种子间隔。")
     parser.add_argument("--spacing", type=float, default=2.0, help="模型在 X 轴上的摆放间距。")
@@ -33,6 +33,12 @@ def parse_args() -> argparse.Namespace:
 
 def run_cmd(args: List[str]) -> None:
     subprocess.run(args, check=True)
+
+
+def run_cmd_ok(args: List[str]) -> bool:
+    """Run a command, return True on success, False on non-zero exit (e.g. SSM fail)."""
+    result = subprocess.run(args)
+    return result.returncode == 0
 
 
 def clone_generated_assets(variant_dir: Path) -> Path:
@@ -58,15 +64,23 @@ def clone_generated_assets(variant_dir: Path) -> Path:
 
 
 def generate_variants(args: argparse.Namespace) -> List[Tuple[str, Path]]:
+    """Generate `args.count` unique robot variants, skipping seeds that fail SSM."""
     variants_root = Path("robot_assets/variants")
     variants_root.mkdir(parents=True, exist_ok=True)
 
     generated: List[Tuple[str, Path]] = []
-    for index in range(args.count):
-        seed = args.seed_base + index * args.seed_step
-        name = f"{args.variant_prefix}_{index:02d}_seed{seed}"
+    index = 0          # variant counter (only increments on success)
+    seed_offset = 0    # absolute seed offset (increments every attempt)
+    max_attempts = args.count * 20  # safety cap to avoid infinite loop
+    attempts = 0
 
-        run_cmd(
+    while len(generated) < args.count and attempts < max_attempts:
+        seed = args.seed_base + seed_offset * args.seed_step
+        name = f"{args.variant_prefix}_{index:02d}_seed{seed}"
+        seed_offset += 1
+        attempts += 1
+
+        ok = run_cmd_ok(
             [
                 sys.executable,
                 "generate_geometry.py",
@@ -78,12 +92,22 @@ def generate_variants(args: argparse.Namespace) -> List[Tuple[str, Path]]:
                 "random",
             ]
         )
+        if not ok:
+            print(f"[SKIP] seed={seed} 未通过 SSM 预检，跳过。")
+            continue
+
         run_cmd([sys.executable, "generate_urdf.py"])
 
         variant_dir = variants_root / name
         urdf_path = clone_generated_assets(variant_dir)
         generated.append((name, urdf_path))
+        index += 1
 
+    if len(generated) < args.count:
+        raise RuntimeError(
+            f"仅生成了 {len(generated)}/{args.count} 个变体（尝试了 {attempts} 个种子）。"
+            " 请减少 --count 或缩小 --body-length/--body-width 让足端更易通过 SSM 预检。"
+        )
     return generated
 
 

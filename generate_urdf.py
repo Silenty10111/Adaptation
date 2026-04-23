@@ -138,9 +138,51 @@ def build_urdf(metadata: dict, output_path: Path, description_path: Path) -> Pat
     return output_path
 
 
+def validate_static_stability_before_export(
+    metadata: dict,
+    threshold: float = 0.0,
+) -> None:
+    """Secondary CGPM/SSM safety check before writing the URDF file.
+
+    The primary SSM gate runs inside generate_geometry.py before any STL
+    file is written.  This function acts as a second line of defence when
+    robot_description.json is edited manually or produced by an external
+    tool that bypassed generate_geometry.py.
+
+    Parameters
+    ----------
+    metadata  : dict   Loaded robot_description.json content.
+    threshold : float  Minimum SSM in metres; default 0.0.
+
+    Raises
+    ------
+    SystemExit  If SSM < threshold.
+    """
+    try:
+        from stability import evaluate_ssm
+    except ImportError as exc:
+        print(f"[SSM] stability 模块导入失败，跳过静态稳定性检验: {exc}")
+        return
+
+    result = evaluate_ssm(metadata, threshold=threshold)
+    ssm_val = result["ssm"]
+    status = "PASS" if result["passed"] else "FAIL"
+    print(f"[SSM] 重心投影法静态稳定裕度  SSM = {ssm_val:.4f} m  [{status}]")
+    print(f"[SSM]   CoM XY          = {[round(v, 4) for v in result['com_xy']]}")
+    print(f"[SSM]   支撑多边形顶点数  = {len(result['support_polygon_xy'])}")
+
+    if not result["passed"]:
+        raise SystemExit(
+            f"\n[SSM] 静态稳定性检验不通过：SSM = {ssm_val:.4f} m < 阈值 {threshold} m。\n"
+            "      质心投影在支撑多边形外，机器人设计需调整（调整腿分布或躯干几何）。\n"
+            "      请重新运行 generate_geometry.py 后再生成 URDF。"
+        )
+
+
 def main() -> None:
     args = parse_args()
     metadata = load_metadata(args.description)
+    validate_static_stability_before_export(metadata)
     output_path = build_urdf(metadata, args.output, args.description)
     print(f"URDF written to: {output_path}")
 

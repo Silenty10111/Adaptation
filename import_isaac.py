@@ -13,6 +13,18 @@ from typing import Dict, List
 
 import numpy as np
 
+# stability module is in the same directory; import lazily so the file
+# still runs without it (warning only).
+try:
+    from stability import (
+        compute_ssm,
+        compute_support_polygon_xy,
+        compute_projected_com_xy,
+    )
+    _HAS_STABILITY = True
+except ImportError:
+    _HAS_STABILITY = False
+
 
 TARGET_PYTHON = "/data/conda/envs/unitree-rl/bin/python"
 TARGET_LD_PATH = "/data/conda/envs/unitree-rl/lib"
@@ -112,6 +124,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stiffness", type=float, default=2200.0, help="Joint position-control stiffness.")
     parser.add_argument("--damping", type=float, default=320.0, help="Joint position-control damping.")
     parser.add_argument("--effort", type=float, default=25000.0, help="Default per-joint effort limit.")
+    parser.add_argument("--body-height", type=float, default=0.72, help="Initial base height above ground.")
+    parser.add_argument("--gait-frequency", type=float, default=0.85, help="Cycle frequency in Hz.")
+    parser.add_argument("--swing-ratio-amplitude", type=float, default=0.26, help="Swing joint ratio amplitude around neutral.")
+    parser.add_argument("--swing-lift-ratio", type=float, default=0.78, help="Lift joint ratio during swing phase.")
+    parser.add_argument("--stance-lift-ratio", type=float, default=0.54, help="Lift joint ratio during stance phase.")
+    parser.add_argument("--swing-drop-ratio", type=float, default=0.38, help="Drop joint ratio during swing phase.")
+    parser.add_argument("--stance-drop-ratio", type=float, default=0.90, help="Drop joint ratio during stance phase.")
     return parser.parse_args()
 
 
@@ -197,6 +216,280 @@ def build_dof_targets(
     return targets, missing_names
 
 
+def clamp_ratio(value: float) -> float:
+    return float(np_clip(float(value), 0.0, 1.0))
+
+
+def ratio_to_joint(lower: float, upper: float, ratio: float) -> float:
+    bounded = clamp_ratio(ratio)
+    return float(lower + bounded * (upper - lower))
+
+
+def foot_xy_map(description: Dict[str, object]) -> Dict[int, np.ndarray]:
+    mapping: Dict[int, np.ndarray] = {}
+    for link in description.get("links", []):
+        if link.get("role") != "foot" or link.get("leg_id") is None:
+            continue
+        leg_id = int(link["leg_id"])
+        origin = np.asarray(link.get("default_world_origin", [0.0, 0.0, 0.0]), dtype=float)
+        mapping[leg_id] = origin[:2]
+    return mapping
+
+
+
+def estimate_drop_torque_margin(description: Dict[str, object], gait_plan: Dict[str, object]) -> Dict[str, float]:
+    total_mass = 0.0
+    trunk_mass = 0.0
+    for link in description.get("links", []):
+        mass = float(link.get("mass_properties", {}).get("mass", 0.0))
+        total_mass += mass
+        if link.get("role") == "trunk":
+            trunk_mass += mass
+
+    leg_count = int(description.get("num_legs", 0))
+    active_support = max(2, leg_count // 2)
+    load_per_leg = (total_mass * 9.81) / float(active_support)
+
+    hip_xy: Dict[int, np.ndarray] = {}
+    foot_xy: Dict[int, np.ndarray] = {}
+    for link in description.get("links", []):
+        leg_id = link.get("leg_id")
+        if leg_id is None:
+            continue
+        origin = np.asarray(link.get("default_world_origin", [0.0, 0.0, 0.0]), dtype=float)
+        if link.get("role") == "joint_sphere" and str(link.get("name", "")).endswith("_hip"):
+            hip_xy[int(leg_id)] = origin[:2]
+        elif link.get("role") == "foot":
+            foot_xy[int(leg_id)] = origin[:2]
+
+    lever_arms = []
+    for leg_id, hip in hip_xy.items():
+        foot = foot_xy.get(leg_id)
+        if foot is None:
+            continue
+        lever_arms.append(float(np.linalg.norm(foot - hip)))
+
+    mean_lever = float(np.mean(lever_arms)) if lever_arms else 0.20
+    estimated_required = load_per_leg * mean_lever
+
+    drop_efforts = []
+    for joint in description.get("joints", []):
+        name = str(joint.get("name", ""))
+        if not name.endswith("_drop"):
+            continue
+        limit = joint.get("limit", {})
+        if "effort" in limit:
+            drop_efforts.append(float(limit["effort"]))
+    available_drop = float(np.mean(drop_efforts)) if drop_efforts else 0.0
+    margin = available_drop / max(estimated_required, 1e-6)
+
+    # Use stability module when available; fall back to plan values otherwise.
+    if _HAS_STABILITY:
+        polygon_xy = compute_support_polygon_xy(description)
+        com_xy_arr = compute_projected_com_xy(description)
+    else:
+        polygon_xy = np.asarray(gait_plan.get("support_polygon_xy", []), dtype=float)
+        com_xy_arr = np.asarray(gait_plan.get("projected_com_xy", [0.0, 0.0]), dtype=float)
+    static_margin = compute_ssm(polygon_xy, com_xy_arr) if _HAS_STABILITY else 0.0
+    if not _HAS_STABILITY:
+        print("[WARN] stability.py not found; SSM will report 0.0.")
+
+    return {
+        "total_mass": float(total_mass),
+        "trunk_mass": float(trunk_mass),
+        "trunk_mass_ratio": float(trunk_mass / max(total_mass, 1e-6)),
+        "estimated_drop_required_torque": float(estimated_required),
+        "mean_drop_effort_limit": float(available_drop),
+        "drop_torque_margin_ratio": float(margin),
+        "static_margin_xy": float(static_margin),
+    }
+
+
+def print_diagnostics(metrics: Dict[str, float]) -> None:
+    print("Dynamics diagnostics:")
+    print(json.dumps(metrics, indent=2, ensure_ascii=False))
+
+    if metrics["static_margin_xy"] < 0.0:
+        print("[DIAG] 质心投影在支撑域外，静稳定性存在风险。")
+    else:
+        print("[DIAG] 质心投影位于支撑域内，静稳定性基本满足。")
+
+    if metrics["drop_torque_margin_ratio"] < 1.0:
+        print("[DIAG] 估算关节力矩裕度不足，腿部承载可能吃紧。")
+    elif metrics["drop_torque_margin_ratio"] < 1.5:
+        print("[DIAG] 估算关节力矩裕度偏紧，建议降低机身质量或增大关节 effort。")
+    else:
+        print("[DIAG] 估算关节力矩裕度充足。")
+
+    if metrics["trunk_mass_ratio"] > 0.75:
+        print("[DIAG] 躯干质量占比过高，动态步态下更易出现腿部过载。")
+
+
+# ---------------------------------------------------------------------------
+# Ground-plane visualisation: forward-direction arrow
+# ---------------------------------------------------------------------------
+
+def get_actor_body_xy(gym, env, actor, gymapi) -> List[float]:
+    """Return the XY position of the actor's root body (base_link) in world frame."""
+    states = gym.get_actor_rigid_body_states(env, actor, gymapi.STATE_POS)
+    if states is None or len(states) == 0:
+        return [0.0, 0.0]
+    p = states["pose"]["p"][0]
+    return [float(p["x"]), float(p["y"])]
+
+
+def draw_forward_direction_line(
+    gym,
+    viewer,
+    env,
+    gymapi,
+    origin_xy: List[float],
+    forward_axis: List[float],
+    length: float = 1.2,
+    z: float = 0.008,
+) -> None:
+    """Render an orange arrow on the ground plane showing the robot's forward direction.
+
+    Draws three debug line segments each frame:
+      1. Main shaft from *origin_xy* in *forward_axis* direction.
+      2 & 3. Two arrowhead lines meeting at the shaft tip.
+
+    Parameters
+    ----------
+    gym            Isaac Gym gym object.
+    viewer         Isaac Gym viewer object (must not be None).
+    env            Environment handle.
+    gymapi         gymapi module reference.
+    origin_xy      [x, y] start of the arrow (typically robot body XY).
+    forward_axis   [fx, fy] unit-ish forward direction vector.
+    length         Total arrow shaft length in metres (default 1.2).
+    z              Height above ground for the line (default 0.008 m).
+    """
+    ox, oy = float(origin_xy[0]), float(origin_xy[1])
+    fx, fy = float(forward_axis[0]), float(forward_axis[1])
+    norm = math.sqrt(fx * fx + fy * fy)
+    if norm < 1e-9:
+        return
+    fx, fy = fx / norm, fy / norm
+
+    # Shaft endpoint
+    ex, ey = ox + fx * length, oy + fy * length
+
+    # Perpendicular (left-hand side)
+    px, py = -fy, fx
+
+    # Arrowhead arms (back 20% of shaft length, spread 35%)
+    head = length * 0.20
+    spread = 0.35
+    left_x  = ex - fx * head + px * head * spread
+    left_y  = ey - fy * head + py * head * spread
+    right_x = ex - fx * head - px * head * spread
+    right_y = ey - fy * head - py * head * spread
+
+    # Vertices: shape (num_lines, 6) — [x1,y1,z1, x2,y2,z2] per row
+    verts = np.array(
+        [
+            [ox, oy, z, ex, ey, z],
+            [ex, ey, z, left_x,  left_y,  z],
+            [ex, ey, z, right_x, right_y, z],
+        ],
+        dtype=np.float32,
+    )
+    # Colors: shape (num_lines, 3) — RGB per row (orange)
+    colors = np.array(
+        [[1.0, 0.45, 0.0], [1.0, 0.45, 0.0], [1.0, 0.45, 0.0]],
+        dtype=np.float32,
+    )
+    gym.clear_lines(viewer)
+    gym.add_lines(viewer, env, 3, verts, colors)
+
+
+def resolve_joint_triplets(
+    gym,
+    env,
+    actor,
+    description: Dict[str, object],
+) -> Dict[int, Dict[str, object]]:
+    dof_props = gym.get_actor_dof_properties(env, actor)
+    lower = np.asarray(dof_props["lower"], dtype=np.float32)
+    upper = np.asarray(dof_props["upper"], dtype=np.float32)
+    mids = 0.5 * (np.where(np.isfinite(lower), lower, -0.5) + np.where(np.isfinite(upper), upper, 0.5))
+
+    dof_names = gym.get_actor_dof_names(env, actor)
+    name_to_index = {name: idx for idx, name in enumerate(dof_names)}
+
+    result: Dict[int, Dict[str, object]] = {}
+    for leg_id in range(int(description.get("num_legs", 0))):
+        lift_name = f"leg_{leg_id}_lift"
+        swing_name = f"leg_{leg_id}_swing"
+        drop_name = f"leg_{leg_id}_drop"
+        if lift_name not in name_to_index or swing_name not in name_to_index or drop_name not in name_to_index:
+            continue
+        lift_idx = name_to_index[lift_name]
+        swing_idx = name_to_index[swing_name]
+        drop_idx = name_to_index[drop_name]
+        result[leg_id] = {
+            "lift_idx": lift_idx,
+            "swing_idx": swing_idx,
+            "drop_idx": drop_idx,
+            "lift_lower": float(lower[lift_idx]),
+            "lift_upper": float(upper[lift_idx]),
+            "swing_lower": float(lower[swing_idx]),
+            "swing_upper": float(upper[swing_idx]),
+            "drop_lower": float(lower[drop_idx]),
+            "drop_upper": float(upper[drop_idx]),
+            "swing_mid": float(mids[swing_idx]),
+        }
+    return result
+
+
+def leg_group_phase(leg_id: int, group_a: List[int], group_b: List[int], base_phase: float) -> float:
+    if leg_id in group_b:
+        return base_phase + np.pi
+    if leg_id in group_a:
+        return base_phase
+    return base_phase
+
+
+def build_cyclic_dof_targets(
+    description: Dict[str, object],
+    gait_plan: Dict[str, object],
+    joint_triplets: Dict[int, Dict[str, object]],
+    default_targets: np.ndarray,
+    sim_time: float,
+    args: argparse.Namespace,
+) -> np.ndarray:
+    targets = default_targets.copy()
+    phase = 2.0 * np.pi * max(args.gait_frequency, 0.05) * sim_time
+    group_a = list(gait_plan.get("topology", {}).get("groups", {}).get("group_a", []))
+    group_b = list(gait_plan.get("topology", {}).get("groups", {}).get("group_b", []))
+
+    forward_axis = np.asarray(gait_plan.get("final_forward_axis", [1.0, 0.0]), dtype=float)
+    if np.linalg.norm(forward_axis) < 1e-6:
+        forward_axis = np.array([1.0, 0.0], dtype=float)
+    forward_axis = forward_axis / np.linalg.norm(forward_axis)
+    foot_map = foot_xy_map(description)
+
+    for leg_id, joints in joint_triplets.items():
+        leg_phase = leg_group_phase(leg_id, group_a, group_b, phase)
+        swing_wave = float(np.sin(leg_phase))
+        swing_alpha = max(swing_wave, 0.0)
+
+        foot_xy = foot_map.get(leg_id, np.zeros(2, dtype=float))
+        direction_sign = 1.0 if float(np.dot(foot_xy, forward_axis)) >= 0.0 else -1.0
+
+        lift_ratio = args.stance_lift_ratio + (args.swing_lift_ratio - args.stance_lift_ratio) * swing_alpha
+        drop_ratio = args.stance_drop_ratio + (args.swing_drop_ratio - args.stance_drop_ratio) * swing_alpha
+        swing_center_ratio = 0.5
+        swing_ratio = swing_center_ratio + args.swing_ratio_amplitude * direction_sign * swing_wave
+
+        targets[joints["lift_idx"]] = ratio_to_joint(joints["lift_lower"], joints["lift_upper"], lift_ratio)
+        targets[joints["drop_idx"]] = ratio_to_joint(joints["drop_lower"], joints["drop_upper"], drop_ratio)
+        targets[joints["swing_idx"]] = ratio_to_joint(joints["swing_lower"], joints["swing_upper"], swing_ratio)
+
+    return targets
+
+
 def configure_actor_dofs(gym, env, actor, gymapi, stiffness: float, damping: float, effort: float) -> None:
     dof_props = gym.get_actor_dof_properties(env, actor)
     dof_props["driveMode"].fill(gymapi.DOF_MODE_POS)
@@ -211,6 +504,7 @@ def main() -> None:
     args = parse_args()
     description = load_description(args.description)
     gait_plan = compute_plan_with_fallback(description)
+    diagnostics = estimate_drop_torque_margin(description, gait_plan)
 
     gymapi = load_gymapi()
     gym = gymapi.acquire_gym()
@@ -264,33 +558,23 @@ def main() -> None:
             raise RuntimeError("创建环境失败。")
 
         pose = gymapi.Transform()
-        pose.p = gymapi.Vec3(0.0, 0.0, 0.70)
+        pose.p = gymapi.Vec3(0.0, 0.0, float(args.body_height))
         actor = gym.create_actor(env, asset, pose, "generated_robot", 0, 1)
         if actor < 0:
             raise RuntimeError("创建 actor 失败。")
 
         configure_actor_dofs(gym, env, actor, gymapi, args.stiffness, args.damping, args.effort)
-
-        controller = MacroLegController(int(description["num_legs"]))
-        forward_axis = gait_plan["final_forward_axis"]
-        group_a = gait_plan["topology"]["groups"]["group_a"]
-        group_b = gait_plan["topology"]["groups"]["group_b"]
-        active_group = group_a if group_a else group_b
-        step_vector = [forward_axis[0] * 0.18, forward_axis[1] * 0.18, -0.20]
-
-        for leg_id in active_group:
-            controller.lift_leg(leg_id)
-            controller.swing_leg(leg_id, step_vector)
-            controller.drop_leg(leg_id)
-
-        named_targets = controller.flush()
-        dof_targets, missing_joints = build_dof_targets(gym, env, actor, gymapi, named_targets)
-        gym.set_actor_dof_position_targets(env, actor, dof_targets)
+        dof_props = gym.get_actor_dof_properties(env, actor)
+        lower = np.asarray(dof_props["lower"], dtype=np.float32)
+        upper = np.asarray(dof_props["upper"], dtype=np.float32)
+        dof_targets = (0.5 * (np.where(np.isfinite(lower), lower, -0.5) + np.where(np.isfinite(upper), upper, 0.5))).astype(np.float32)
+        joint_triplets = resolve_joint_triplets(gym, env, actor, description)
+        missing_joints = []
 
         print("Adaptive gait plan summary:")
         print(json.dumps(gait_plan, indent=2, ensure_ascii=False))
-        print("Macro controller targets:")
-        print(named_targets)
+        print_diagnostics(diagnostics)
+        print("[INFO] 已启用分组交替周期控制，目标为平地直线推进。")
         if missing_joints:
             print("[WARN] 部分关节名在资产 DOF 中未找到:")
             print(missing_joints)
@@ -304,18 +588,28 @@ def main() -> None:
             cam_target = gymapi.Vec3(0.0, 0.0, 0.4)
             gym.viewer_camera_look_at(viewer, env, cam_pos, cam_target)
             print("[OK] Viewer 启动，关闭窗口即可退出。")
+            forward_axis = list(gait_plan.get("final_forward_axis", [1.0, 0.0]))
+            sim_time = 0.0
             while not gym.query_viewer_has_closed(viewer):
+                dof_targets = build_cyclic_dof_targets(description, gait_plan, joint_triplets, dof_targets, sim_time, args)
                 gym.set_actor_dof_position_targets(env, actor, dof_targets)
                 gym.simulate(sim)
                 gym.fetch_results(sim, True)
                 gym.step_graphics(sim)
+                # Update forward-direction arrow every frame
+                body_xy = get_actor_body_xy(gym, env, actor, gymapi)
+                draw_forward_direction_line(gym, viewer, env, gymapi, body_xy, forward_axis)
                 gym.draw_viewer(viewer, sim, True)
                 gym.sync_frame_time(sim)
+                sim_time += sim_params.dt
         else:
+            sim_time = 0.0
             for _ in range(max(args.steps, 1)):
+                dof_targets = build_cyclic_dof_targets(description, gait_plan, joint_triplets, dof_targets, sim_time, args)
                 gym.set_actor_dof_position_targets(env, actor, dof_targets)
                 gym.simulate(sim)
                 gym.fetch_results(sim, True)
+                sim_time += sim_params.dt
             print("[OK] Headless simulation finished.")
     finally:
         if viewer is not None:
