@@ -351,11 +351,16 @@ def ensure_unique_variants(repo_root: Path, num_required: int, auto_generate: bo
             ]
         )
         if not ok:
-            print(f"[SKIP] seed={seed} 未通过 SSM 预检，跳过。")
+            print(f"[SKIP] seed={seed} 未通过 SSM 预检 (geometry fail)，跳过。")
             seed_offset += 1
             continue
 
-        run_cmd([GEN_PYTHON, str(repo_root / "generate_urdf.py")])
+        urdf_ok = run_cmd_ok([GEN_PYTHON, str(repo_root / "generate_urdf.py")])
+        if not urdf_ok:
+            print(f"[SKIP] seed={seed} 未通过 SSM 构建检 (urdf fail)，跳过。")
+            seed_offset += 1
+            continue
+
         clone_generated_assets(repo_root, variants_root / name)
         next_index += 1
         seed_offset += 1

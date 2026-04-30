@@ -40,6 +40,24 @@ import numpy as np
 EPS = 1e-9
 
 
+def _signed_polygon_area(polygon_xy: np.ndarray) -> float:
+    pts = np.asarray(polygon_xy, dtype=float)
+    if len(pts) < 3:
+        return 0.0
+    x = pts[:, 0]
+    y = pts[:, 1]
+    return 0.5 * float(np.sum(x * np.roll(y, -1) - y * np.roll(x, -1)))
+
+
+def _ensure_ccw(polygon_xy: np.ndarray) -> np.ndarray:
+    pts = np.asarray(polygon_xy, dtype=float)
+    if len(pts) < 3:
+        return pts
+    if _signed_polygon_area(pts) < 0.0:
+        return pts[::-1].copy()
+    return pts
+
+
 # ---------------------------------------------------------------------------
 # Sub-function 1: CoM projection
 # ---------------------------------------------------------------------------
@@ -111,7 +129,7 @@ def compute_support_polygon_xy(description: Dict[str, object]) -> np.ndarray:
 
         hull_geom = MultiPoint(foot_pts).convex_hull
         if isinstance(hull_geom, ShapelyPolygon):
-            return np.array(hull_geom.exterior.coords[:-1], dtype=float)
+            return _ensure_ccw(np.array(hull_geom.exterior.coords[:-1], dtype=float))
         # Degenerate line or point — fall through to angle-sort fallback
     except ImportError:
         pass
@@ -120,7 +138,7 @@ def compute_support_polygon_xy(description: Dict[str, object]) -> np.ndarray:
     pts = np.array(foot_pts, dtype=float)
     center = pts.mean(axis=0)
     angles = np.arctan2(pts[:, 1] - center[1], pts[:, 0] - center[0])
-    return pts[np.argsort(angles)]
+    return _ensure_ccw(pts[np.argsort(angles)])
 
 
 # ---------------------------------------------------------------------------

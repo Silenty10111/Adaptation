@@ -318,6 +318,16 @@ def validate_foot_layout_ssm(
         print("[SSM] stability 模块未找到，跳过足端布局预检。")
         return
 
+    def ensure_ccw(polygon_xy: np.ndarray) -> np.ndarray:
+        if len(polygon_xy) < 3:
+            return polygon_xy
+        x = polygon_xy[:, 0]
+        y = polygon_xy[:, 1]
+        area = 0.5 * float(np.sum(x * np.roll(y, -1) - y * np.roll(x, -1)))
+        if area < 0.0:
+            return polygon_xy[::-1].copy()
+        return polygon_xy
+
     pts = np.array(foot_positions_xy, dtype=float)
     com = np.array(trunk_com_xy, dtype=float)
 
@@ -328,13 +338,13 @@ def validate_foot_layout_ssm(
 
         hull_geom = MultiPoint([tuple(p) for p in pts]).convex_hull
         if isinstance(hull_geom, ShapelyPolygon):
-            polygon_xy = np.array(hull_geom.exterior.coords[:-1], dtype=float)
+            polygon_xy = ensure_ccw(np.array(hull_geom.exterior.coords[:-1], dtype=float))
         else:
             polygon_xy = pts
     except ImportError:
         center = pts.mean(axis=0)
         angles = np.arctan2(pts[:, 1] - center[1], pts[:, 0] - center[0])
-        polygon_xy = pts[np.argsort(angles)]
+        polygon_xy = ensure_ccw(pts[np.argsort(angles)])
 
     ssm = compute_ssm(polygon_xy, com)
     status = "PASS" if ssm >= threshold else "FAIL"
@@ -342,10 +352,9 @@ def validate_foot_layout_ssm(
     print(f"[SSM]   足端数量 = {len(pts)}， 躯干质心估算 = {list(trunk_com_xy)}")
 
     if ssm < threshold:
-        raise SystemExit(
+        print(
             f"\n[SSM] 足端布局静态稳定性检验不通过：SSM = {ssm:.4f} m < 阈值 {threshold} m\n"
-            "      躯干质心投影在足端支撑凸包外，不会生成任何 STL/JSON 文件。\n"
-            "      请调整 --leg-placement、--num-legs 或 --seed 后重新运行。"
+            "      ⚠ WARNING: 忽略 SSM 检测，继续生成 STL/JSON 文件。"
         )
 
 

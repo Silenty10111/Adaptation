@@ -93,10 +93,15 @@ def generate_variants(args: argparse.Namespace) -> List[Tuple[str, Path]]:
             ]
         )
         if not ok:
-            print(f"[SKIP] seed={seed} 未通过 SSM 预检，跳过。")
+            print(f"[SKIP] seed={seed} 未通过 SSM 预检 (geometry fail)，跳过。")
             continue
 
-        run_cmd([sys.executable, "generate_urdf.py"])
+        urdf_ok = run_cmd_ok(
+            [sys.executable, "generate_urdf.py"]
+        )
+        if not urdf_ok:
+            print(f"[SKIP] seed={seed} 未通过 SSM 构建检 (urdf fail)，跳过。")
+            continue
 
         variant_dir = variants_root / name
         urdf_path = clone_generated_assets(variant_dir)

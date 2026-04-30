@@ -15,6 +15,8 @@
 | `stability.py` | 任意环境 | **静态稳定性独立模块**：封装 CGPM/SSM 四个子函数，供 `generate_urdf.py` 调用，也可单独导入使用。 |
 | `adaptive_gait.py` | 普通 Python 环境（Adaptation） | **自适应步态规划核心**：实现虚拟身体轴线估计、支撑安全走廊提取、头尾方向判定、质心平移代偿、腿分组与拓扑屏蔽。 |
 | `plan_gait.py` | 普通 Python 环境（Adaptation） | **命令行规划入口**：直接读取 `robot_description.json` 并输出规划结果 JSON。 |
+| `test_generate_ssm.py` | 普通 Python 环境（Adaptation） | **几何参数扫描器**：批量调用 `generate_geometry.py`，用于测试不同参数/种子下的 SSM 通过率，并输出通过组合统计。 |
+| `ssm_visualizer.py` | 普通 Python 环境（Adaptation） | **SSM 可视化工具**：从描述文件计算支撑多边形与 SSM，并把分析图保存到 `png/` 目录。 |
 | `import_isaac.py` | **unitree-rl 环境**（含 Isaac Gym） | **Isaac Gym 仿真入口**：加载 URDF，执行分组交替周期步态控制，绘制前进方向地面箭头，输出稳定性与力矩裕度诊断。 |
 | `test_gym.py` | **unitree-rl 环境**（含 Isaac Gym） | **Isaac Gym 静态加载验证**：批量加载多个变体 URDF，验证模型可正确导入并保持站立姿态。 |
 
@@ -367,6 +369,47 @@ python plan_gait.py --state robot_assets/gait_state.json --output robot_assets/g
 	"com_xy": [0.02, -0.01]
 }
 ```
+
+### 7.4 SSM 参数扫描（`test_generate_ssm.py`）
+
+`test_generate_ssm.py` 用于批量试验几何参数组合，快速评估 `generate_geometry.py` 的 SSM 通过率。
+
+常见用法：
+
+```bash
+# 使用脚本内默认范围随机试验
+python test_generate_ssm.py --trials 20
+
+# 只测试 generate_geometry.py 默认几何（不传几何参数）
+python test_generate_ssm.py --trials 10 --use-default
+
+# 以已有 robot_description.json 为基准，在其附近抖动搜索
+python test_generate_ssm.py \
+	--trials 30 \
+	--ref-json robot_assets/robot_description.json \
+	--jitter 0.05
+```
+
+说明：
+
+- `--use-default`：每次仅改变种子，不传 `--body-length/--body-width/...` 参数。
+- `--ref-json`：从参考 JSON 读取几何基准值，再按 `--jitter` 比例做随机扰动。
+- `--seed-base` 与 `--seed-step`：控制批量试验时的种子序列。
+- 结束后会输出 PASS/FAIL 汇总，并列出通过样本参数。
+
+### 7.5 `png/` 图片生成功能位置
+
+当前 `png/` 目录图片的生成逻辑在可视化脚本中，关键位置如下：
+
+- `ssm_visualizer.py`：
+	- `OUTPUT_DIR = REPO_ROOT / "png"` 定义输出目录。
+	- `SSMVisualizer.plot(...)` 内部使用 `fig.savefig(save_path, ...)` 负责最终落盘。
+	- `main()` 中调用 `OUTPUT_DIR.mkdir(parents=True, exist_ok=True)` 创建目录。
+	- `main()` 里拼接 `filename = f"{robot_name}_{ssm_status}_ssm{...}.png"` 并写入 `save_path = OUTPUT_DIR / filename`。
+
+- `adaptive_gait.py`：
+	- 当前文件中存在与 `ssm_visualizer.py` 同步的同名可视化实现（同样包含 `OUTPUT_DIR`、`plot()` 和 `fig.savefig(...)` 路径）。
+	- 若你后续只保留一份可视化实现，建议优先保留 `ssm_visualizer.py` 作为单一入口。
 
 ## 8. Isaac Gym 可视化仿真
 
