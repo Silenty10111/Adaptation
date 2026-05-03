@@ -15,41 +15,49 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-# ============================================
-# 字体配置
-# ============================================
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.font_manager as fm
+# ---------- matplotlib (lazy — only required by SSMVisualizer) ------------
 
-chinese_fonts = [
-    'WenQuanYi Zen Hei',
-    'WenQuanYi Micro Hei',
-    'Noto Sans CJK SC',
-    'Noto Sans SC',
-    'SimHei',
-    'DejaVu Sans',
-]
+_plt = None
+_available_font = None
 
-available_font = None
-for font_name in chinese_fonts:
-    try:
-        font_path = fm.findfont(fm.FontProperties(family=font_name), fallback_to_default=False)
-        if font_path:
-            available_font = font_name
-            break
-    except:
-        continue
+def _ensure_matplotlib():
+    global _plt, _available_font
+    if _plt is not None:
+        return _plt, _available_font
 
-if available_font:
-    print(f"[INFO] 使用字体: {available_font}")
-    matplotlib.rcParams['font.family'] = available_font
-else:
-    print("[WARN] 未找到中文字体，使用英文")
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.font_manager as fm
 
-matplotlib.rcParams['axes.unicode_minus'] = False
+    chinese_fonts = [
+        'WenQuanYi Zen Hei',
+        'WenQuanYi Micro Hei',
+        'Noto Sans CJK SC',
+        'Noto Sans SC',
+        'SimHei',
+        'DejaVu Sans',
+    ]
 
-import matplotlib.pyplot as plt
+    for font_name in chinese_fonts:
+        try:
+            font_path = fm.findfont(fm.FontProperties(family=font_name), fallback_to_default=False)
+            if font_path:
+                _available_font = font_name
+                break
+        except:
+            continue
+
+    if _available_font:
+        print(f"[INFO] 使用字体: {_available_font}")
+        matplotlib.rcParams['font.family'] = _available_font
+    else:
+        print("[WARN] 未找到中文字体，使用英文")
+
+    matplotlib.rcParams['axes.unicode_minus'] = False
+
+    import matplotlib.pyplot as _plt_mod
+    _plt = _plt_mod
+    return _plt, _available_font
 
 # ---------- 配置 ----------
 GEN_PYTHON = "/data/conda/envs/Adaptation/bin/python"
@@ -83,6 +91,358 @@ def _ensure_ccw(polygon_xy: np.ndarray) -> np.ndarray:
         return pts[::-1].copy()
     return pts
 
+
+# ---------------------------------------------------------------------------
+# Adaptive Gait Planner — Phase 1 & 2
+# ---------------------------------------------------------------------------
+
+def compute_adaptive_plan(
+    description: Dict,
+    state: Optional[Dict] = None,
+) -> Dict:
+    """Compute virtual forward axis, heading direction, leg groups, and gait topology.
+
+    Phase 1 — Forward axis (Section 4b in README):
+      1. Collect foot positions and build weighted covariance matrix.
+      2. PCA → initial virtual forward axis (eigenvector of max eigenvalue).
+      3. Score ±axis by swing-vector contribution, phase gain, and joint-range gain.
+      4. The higher-scoring direction becomes ``final_forward_axis``.
+
+    Phase 2 — Leg grouping (Section 6 in README):
+      1. Project feet onto ``final_forward_axis``, sort by longitudinal position,
+         distribute legs alternately into ``group_a`` / ``group_b``.
+      2. Compute translational compensation from CoM → CoS.
+      3. Build safety corridor along the forward axis inside the support polygon.
+
+    Parameters
+    ----------
+    description : dict  robot_description.json content.
+    state       : dict  optional gait-state override (phases, swing vectors, etc.).
+
+    Returns
+    -------
+    dict  adaptive gait plan (see Section 9 in README for field descriptions).
+    """
+    if state is None:
+        state = {}
+
+    EPS = 1e-9
+
+    # ---- foot world positions & leg metadata ---------------------------------
+    num_legs = int(description.get("num_legs", 0))
+    foot_xy: Dict[int, np.ndarray] = {}
+    hip_xy: Dict[int, np.ndarray] = {}
+    joint_links: Dict[int, List[Dict]] = {}
+
+    for link in description.get("links", []):
+        leg_id = link.get("leg_id")
+        if leg_id is None:
+            continue
+        origin = np.asarray(link.get("default_world_origin", [0.0, 0.0, 0.0]), dtype=float)
+        role = str(link.get("role", ""))
+        if role == "foot":
+            foot_xy[int(leg_id)] = origin[:2]
+        elif role == "joint_sphere":
+            name = str(link.get("name", ""))
+            if name.endswith("_hip"):
+                hip_xy[int(leg_id)] = origin[:2]
+        joint_links.setdefault(int(leg_id), []).append(link)
+
+    # ---- extract swing-vector range from joints per leg ----------------------
+    swing_ranges: Dict[int, float] = {}
+    for joint in description.get("joints", []):
+        jname = str(joint.get("name", ""))
+        for leg_id_str in joint_links:
+            if jname.startswith(f"leg_{leg_id_str}_swing"):
+                limit = joint.get("limit", {})
+                lo = float(limit.get("lower", -0.55))
+                hi = float(limit.get("upper", 0.55))
+                swing_ranges[int(leg_id_str)] = max(hi - lo, 0.0)
+                break
+
+    # ---- support legs --------------------------------------------------------
+    state_phases = state.get("phases", {})
+    upcoming_stance = state.get("upcoming_stance_leg_ids", [])
+    locked_ids = state.get("locked_leg_ids", [])
+    missing_ids = state.get("missing_leg_ids", [])
+
+    support_ids: List[int] = []
+    near_stance_ids: List[int] = []
+
+    for leg_id, pos in foot_xy.items():
+        if leg_id in missing_ids:
+            continue
+        phase = state_phases.get(str(leg_id), "")
+        if phase == "stance":
+            support_ids.append(leg_id)
+        elif int(leg_id) in upcoming_stance:
+            near_stance_ids.append(leg_id)
+
+    # Fallback: treat all valid feet as support
+    if not support_ids:
+        support_ids = sorted([lid for lid in foot_xy if lid not in missing_ids])
+
+    # ---- weighted covariance → PCA initial axis -----------------------------
+    def _unit(vec: np.ndarray) -> np.ndarray:
+        n = float(np.linalg.norm(vec))
+        return vec / n if n > EPS else vec
+
+    weights: Dict[int, float] = {}
+    for lid in foot_xy:
+        if lid in support_ids:
+            weights[lid] = 1.0
+        elif lid in near_stance_ids:
+            weights[lid] = 0.35
+        else:
+            weights[lid] = 0.0
+
+    sum_w = sum(weights.get(lid, 0.0) for lid in foot_xy)
+    if sum_w < EPS:
+        sum_w = 1.0
+    cos_xy = np.zeros(2, dtype=float)
+    for lid, pos in foot_xy.items():
+        w = weights.get(lid, 0.0)
+        if w <= 0.0:
+            continue
+        cos_xy += pos * w
+    cos_xy /= sum_w
+
+    cov = np.zeros((2, 2), dtype=float)
+    for lid, pos in foot_xy.items():
+        w = weights.get(lid, 0.0)
+        if w <= 0.0:
+            continue
+        diff = pos - cos_xy
+        cov += w * np.outer(diff, diff)
+    cov /= max(sum_w, EPS)
+
+    eigenvals, eigenvecs = np.linalg.eigh(cov)
+    idx_max = int(np.argmax(eigenvals))
+    initial_axis = eigenvecs[:, idx_max].copy()
+    initial_axis = _unit(initial_axis)
+
+    # ---- COM projection (used for stability / compensation) ------------------
+    projected_com_xy = np.zeros(2, dtype=float)
+    total_mass = 0.0
+    for link in description.get("links", []):
+        mp = link.get("mass_properties", {})
+        mass = float(mp.get("mass", 0.0))
+        if mass <= 0.0:
+            continue
+        origin = np.asarray(link.get("default_world_origin", [0.0, 0.0, 0.0]), dtype=float)
+        cm_local = np.asarray(mp.get("center_mass", [0.0, 0.0, 0.0]), dtype=float)
+        world_cm = origin + cm_local
+        projected_com_xy += world_cm[:2] * mass
+        total_mass += mass
+    if total_mass > EPS:
+        projected_com_xy /= total_mass
+
+    # ---- Phase-1 torque-aware scoring of ±axis -------------------------------
+    def _build_default_swing_vector(leg_id: int) -> np.ndarray:
+        """Auto-generate a swing vector for a leg without an explicit one."""
+        hip = hip_xy.get(leg_id)
+        if hip is None:
+            hip = np.zeros(2, dtype=float)
+        # swing is tangent to the radial direction from CoS → hip
+        radial = hip - cos_xy
+        radial_norm = float(np.linalg.norm(radial))
+        if radial_norm < EPS:
+            return np.array([0.0, 0.0], dtype=float)
+        tangent = np.array([-radial[1], radial[0]], dtype=float) / radial_norm
+        # Determine lateral side via cross product with body centroid
+        side = 1.0 if np.cross(radial, tangent) > 0 else -1.0
+        # Prefer forward-sweeping direction
+        return tangent * side * 0.15
+
+    user_swings = state.get("swing_vectors", {})
+    state_phases_legs = state.get("phases", {})
+
+    def _score_direction(direction: np.ndarray) -> float:
+        score = 0.0
+        for leg_id, pos in foot_xy.items():
+            if leg_id in missing_ids or leg_id in locked_ids:
+                continue
+            swing_raw = user_swings.get(str(leg_id), None)
+            if swing_raw is not None:
+                v = np.asarray(swing_raw, dtype=float)[:2].copy()
+            else:
+                v = _build_default_swing_vector(leg_id)
+            v_norm = float(np.linalg.norm(v))
+            if v_norm < EPS:
+                continue
+            v_hat = v / v_norm
+            proj = float(np.dot(direction, v_hat))
+            if proj <= 0.0:
+                continue  # only contribute positive projection
+
+            # Phase gain
+            phase = state_phases_legs.get(str(leg_id), "")
+            if phase in ("swing", "lift", "drop"):
+                phase_gain = 1.15
+            elif phase == "stance":
+                phase_gain = 0.75
+            else:
+                phase_gain = 1.0
+
+            # Joint-range gain  ──  wider swing range ⇒ more drive capacity
+            delta = swing_ranges.get(leg_id, 0.0)
+            range_gain = 1.0 + min(delta, 1.2)
+
+            score += proj * v_norm * phase_gain * range_gain
+        return score
+
+    pos_score = _score_direction(initial_axis)
+    neg_score = _score_direction(-initial_axis)
+    final_axis = initial_axis.copy() if pos_score >= neg_score else -initial_axis.copy()
+    final_axis = _unit(final_axis)
+
+    drive_resultant = final_axis * max(pos_score, neg_score)
+
+    # ---- support polygon (CCW hull of all foot positions) --------------------
+    all_foot_pts = np.array([p for lid, p in foot_xy.items() if lid not in missing_ids], dtype=float)
+    if len(all_foot_pts) >= 3 and SHAPELY_AVAILABLE:
+        try:
+            hull = MultiPoint(all_foot_pts.tolist()).convex_hull
+            if hull.geom_type == "Polygon":
+                support_polygon = _ensure_ccw(np.array(hull.exterior.coords[:-1], dtype=float))
+            else:
+                support_polygon = all_foot_pts
+        except Exception:
+            support_polygon = all_foot_pts
+    else:
+        support_polygon = all_foot_pts
+
+    # ---- safety corridor (medial-axis sampling along forward axis) -----------
+    safety_corridor_xy: List[List[float]] = []
+    if len(support_polygon) >= 3:
+        try:
+            from shapely.geometry import LineString, Polygon as ShpPoly
+            poly = ShpPoly(support_polygon)
+            # Walk along forward axis through the polygon
+            com_p = projected_com_xy
+            step_len = 0.06
+            num_steps = 30
+            for i in range(-num_steps, num_steps + 1):
+                sample_pt = com_p + final_axis * (i * step_len)
+                # Build perpendicular scan line
+                perp = np.array([-final_axis[1], final_axis[0]], dtype=float)
+                scan_half = 1.0
+                line = LineString([
+                    (sample_pt[0] - perp[0] * scan_half, sample_pt[1] - perp[1] * scan_half),
+                    (sample_pt[0] + perp[0] * scan_half, sample_pt[1] + perp[1] * scan_half),
+                ])
+                inter = line.intersection(poly)
+                if inter.is_empty:
+                    continue
+                if inter.geom_type == "Point":
+                    pt = (inter.x, inter.y)
+                    safety_corridor_xy.append([float(pt[0]), float(pt[1])])
+                elif inter.geom_type == "MultiPoint":
+                    coords = [(p.x, p.y) for p in inter.geoms]
+                    if len(coords) >= 2:
+                        mx = sum(c[0] for c in coords) / len(coords)
+                        my = sum(c[1] for c in coords) / len(coords)
+                        safety_corridor_xy.append([mx, my])
+                elif inter.geom_type == "LineString":
+                    mid = inter.interpolate(0.5, normalized=True)
+                    safety_corridor_xy.append([float(mid.x), float(mid.y)])
+        except Exception:
+            pass
+
+    # ---- translational compensation (CoM → CoS pull-back) -------------------
+    # Solve min_t ||(CoM + t) - CoS||² + λ||W t||²  →  t ≈ (CoS - CoM) / (1 + λ)
+    lambda_reg = 0.25
+    torque_weights = state.get("torque_weights", {})
+    avg_w = np.mean([float(w) for w in torque_weights.values()]) if torque_weights else 1.0
+    effective_lambda = lambda_reg * avg_w
+    com_offset = cos_xy - projected_com_xy
+    translational_compensation = com_offset / (1.0 + effective_lambda)
+
+    # ---- Phase 2: leg grouping -----------------------------------------------
+    # Project foot positions onto final_forward_axis
+    active_legs = [lid for lid in sorted(foot_xy) if lid not in missing_ids and lid not in locked_ids]
+    projections = []
+    for lid in active_legs:
+        proj = float(np.dot(foot_xy[lid], final_axis))
+        lateral = float(np.dot(foot_xy[lid], np.array([-final_axis[1], final_axis[0]], dtype=float)))
+        projections.append((lid, proj, lateral))
+
+    # Sort by longitudinal position, then lateral
+    projections.sort(key=lambda t: (t[1], t[2]))
+    group_a: List[int] = []
+    group_b: List[int] = []
+    for idx, (lid, _, _) in enumerate(projections):
+        if idx % 2 == 0:
+            group_a.append(lid)
+        else:
+            group_b.append(lid)
+
+    # ---- inhibition rules ----------------------------------------------------
+    inhibition_rules: List[Dict] = []
+    for lid in locked_ids:
+        inhibition_rules.append({
+            "leg_id": int(lid),
+            "reason": "locked",
+            "in_degree": 0.0,
+            "out_degree": 0.0,
+        })
+    for lid in missing_ids:
+        inhibition_rules.append({
+            "leg_id": int(lid),
+            "reason": "missing",
+            "in_degree": 0.0,
+            "out_degree": 0.0,
+        })
+    for lid in range(num_legs):
+        if lid not in foot_xy:
+            inhibition_rules.append({
+                "leg_id": lid,
+                "reason": "no_foot_data",
+                "in_degree": 0.0,
+                "out_degree": 0.0,
+            })
+
+    # ---- planned swings ------------------------------------------------------
+    planned_swings: Dict[str, Dict] = {}
+    for lid in foot_xy:
+        v_raw = user_swings.get(str(lid))
+        if v_raw is not None:
+            v = np.asarray(v_raw, dtype=float)[:2]
+        else:
+            v = _build_default_swing_vector(lid)
+        fwd_comp = float(np.dot(v, final_axis))
+        planned_swings[str(lid)] = {
+            "swing_vector": v.tolist(),
+            "forward_component": fwd_comp,
+            "magnitude": float(np.linalg.norm(v)),
+        }
+
+    plan = {
+        "support_center_xy": cos_xy.tolist(),
+        "projected_com_xy": projected_com_xy.tolist(),
+        "initial_virtual_forward_axis": initial_axis.tolist(),
+        "final_forward_axis": final_axis.tolist(),
+        "drive_resultant_xy": drive_resultant.tolist(),
+        "direction_scores": {"positive": pos_score, "negative": neg_score},
+        "support_polygon_xy": support_polygon.tolist() if len(support_polygon) > 0 else [],
+        "safety_corridor_xy": safety_corridor_xy,
+        "translational_compensation_xy": translational_compensation.tolist(),
+        "planned_swings": planned_swings,
+        "support_leg_ids": support_ids,
+        "near_stance_leg_ids": near_stance_ids,
+        "topology": {
+            "groups": {"group_a": group_a, "group_b": group_b},
+            "phase_offsets": {"group_a": 0.0, "group_b": float(np.pi)},
+            "inhibition_rules": inhibition_rules,
+            "coupling_matrix_zeroed_edges": [],
+        },
+    }
+    return plan
+
+
+# ---------------------------------------------------------------------------
+# SSM Visualiser (matplotlib-based, for offline inspection)
+# ---------------------------------------------------------------------------
 
 class SSMVisualizer:
     """SSM 可视化器"""
@@ -226,6 +586,7 @@ class SSMVisualizer:
     
     def plot(self, save_path: Path, robot_name: str, seed: int):
         """绘制可视化图片"""
+        plt, available_font = _ensure_matplotlib()
         fig, ax = plt.subplots(1, 1, figsize=(14, 11))
         
         # 1. 躯干轮廓

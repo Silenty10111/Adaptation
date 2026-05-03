@@ -42,19 +42,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--torque-scale",
         type=float,
-        default=5.0,
+        default=1.0,
         help="Global multiplier for joint effort limits during static holding.",
     )
     parser.add_argument(
         "--effort-cap",
         type=float,
-        default=50000.0,
-        help="Upper bound for per-joint effort limit (default is intentionally high).",
+        default=250.0,
+        help="Upper bound for per-joint effort limit.",
     )
     parser.add_argument(
         "--proximal-horizontal-ratio",
         type=float,
-        default=0.50,
+        default=0.05,
         help="Target ratio in joint range for body-connected leg segment orientation.",
     )
     parser.add_argument(
@@ -78,6 +78,12 @@ def parse_args() -> argparse.Namespace:
         "--no-auto-generate",
         action="store_true",
         help="Disable automatic generation of missing unique variants.",
+    )
+    parser.add_argument(
+        "--body-height",
+        type=float,
+        default=0.50,
+        help="Initial body (base_link) height above ground in metres.",
     )
     parser.set_defaults(adaptive_hold=True)
     return parser.parse_args()
@@ -142,12 +148,12 @@ def initialize_standing_posture(
     dof_props = gym.get_actor_dof_properties(env, actor)
     dof_props["driveMode"].fill(gymapi.DOF_MODE_POS)
     # Reinforced static-hold gains to avoid gravity-induced leg deformation.
-    dof_props["stiffness"].fill(1800.0)
-    dof_props["damping"].fill(260.0)
+    dof_props["stiffness"].fill(40.0)
+    dof_props["damping"].fill(2.0)
     if "effort" in dof_props.dtype.names:
-        dof_props["effort"].fill(min(5000.0 * torque_scale, effort_cap))
+        dof_props["effort"].fill(min(100.0 * torque_scale, effort_cap))
     if "armature" in dof_props.dtype.names:
-        dof_props["armature"].fill(0.08)
+        dof_props["armature"].fill(0.01)
 
     dof_count = len(dof_props["lower"])
     dof_names = gym.get_asset_dof_names(asset)
@@ -155,20 +161,20 @@ def initialize_standing_posture(
     # Per-joint reinforcement: prioritize 2nd joint (swing) and extension (drop) joint.
     for idx, name in enumerate(dof_names):
         if "_swing" in name:
-            dof_props["stiffness"][idx] = 4000.0
-            dof_props["damping"][idx] = 600.0
+            dof_props["stiffness"][idx] = 60.0
+            dof_props["damping"][idx] = 3.0
             if "effort" in dof_props.dtype.names:
-                dof_props["effort"][idx] = min(18000.0 * torque_scale, effort_cap)
+                dof_props["effort"][idx] = min(150.0 * torque_scale, effort_cap)
         elif "_drop" in name:
-            dof_props["stiffness"][idx] = 6500.0
-            dof_props["damping"][idx] = 900.0
+            dof_props["stiffness"][idx] = 80.0
+            dof_props["damping"][idx] = 4.0
             if "effort" in dof_props.dtype.names:
-                dof_props["effort"][idx] = min(30000.0 * torque_scale, effort_cap)
+                dof_props["effort"][idx] = min(200.0 * torque_scale, effort_cap)
         elif "_lift" in name:
-            dof_props["stiffness"][idx] = 2600.0
-            dof_props["damping"][idx] = 380.0
+            dof_props["stiffness"][idx] = 50.0
+            dof_props["damping"][idx] = 2.5
             if "effort" in dof_props.dtype.names:
-                dof_props["effort"][idx] = min(12000.0 * torque_scale, effort_cap)
+                dof_props["effort"][idx] = min(120.0 * torque_scale, effort_cap)
 
     gym.set_actor_dof_properties(env, actor, dof_props)
 
@@ -226,7 +232,9 @@ def update_stance_targets(controller: dict, joint_pos: np.ndarray) -> np.ndarray
         elif "_lift" in name:
             sag = targets[idx] - joint_pos[idx]
             if sag > 0.004:
-                targets[idx] = min(upper[idx], targets[idx] + min(0.008, 0.16 * sag))
+                targets[idx] = max(lower[idx], targets[idx] - min(0.008, 0.16 * sag))
+            elif sag < -0.004:
+                targets[idx] = min(upper[idx], targets[idx] + min(0.008, 0.16 * abs(sag)))
         elif "_swing" in name:
             # Softly re-center second joint instead of hard constraints.
             targets[idx] = 0.985 * targets[idx] + 0.015 * mid[idx]
@@ -416,6 +424,7 @@ def main() -> int:
         variant_urdfs = ensure_unique_variants(repo_root, num_robots, auto_generate=not args.no_auto_generate)
 
         asset_options = gymapi.AssetOptions()
+        asset_options.default_dof_drive_mode = int(gymapi.DOF_MODE_POS)
         asset_options.fix_base_link = False
         asset_options.disable_gravity = False
         asset_options.flip_visual_attachments = False
@@ -438,7 +447,7 @@ def main() -> int:
         actors = []
         controllers = []
         pose = gymapi.Transform()
-        pose.p = gymapi.Vec3(0.0, 0.0, 0.70)
+        pose.p = gymapi.Vec3(0.0, 0.0, float(args.body_height))
 
         for idx in range(num_robots):
             env = gym.create_env(sim, env_lower, env_upper, num_per_row)

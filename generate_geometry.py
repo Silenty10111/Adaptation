@@ -38,7 +38,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lower-length", type=float, default=0.30)
     parser.add_argument("--joint-radius", type=float, default=0.035)
     parser.add_argument("--link-radius", type=float, default=0.018)
-    parser.add_argument("--density", type=float, default=780.0, help="Uniform density in kg/m^3.")
+    parser.add_argument("--density", type=float, default=300.0, help="Uniform density in kg/m^3.")
     return parser.parse_args()
 
 
@@ -508,7 +508,7 @@ def assemble_robot(args: argparse.Namespace) -> Dict[str, object]:
                     "child": swing_name,
                     "origin": {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
                     "axis": to_list(lift_axis),
-                    "limit": {"lower": -0.80, "upper": 0.95, "effort": 25.0, "velocity": 2.5},
+                    "limit": {"lower": -0.80, "upper": 0.95, "effort": 80.0, "velocity": 2.5},
                     "dynamics": {"damping": 0.2, "friction": 0.05},
                 },
                 {
@@ -521,7 +521,7 @@ def assemble_robot(args: argparse.Namespace) -> Dict[str, object]:
                     "limit": {
                         "lower": float(swing_limits[0]),
                         "upper": float(swing_limits[1]),
-                        "effort": 20.0,
+                        "effort": 60.0,
                         "velocity": 2.0,
                     },
                     "dynamics": {"damping": 0.15, "friction": 0.04},
@@ -540,7 +540,7 @@ def assemble_robot(args: argparse.Namespace) -> Dict[str, object]:
                     "child": lower_name,
                     "origin": {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
                     "axis": to_list(lift_axis),
-                    "limit": {"lower": -0.10, "upper": 1.10, "effort": 18.0, "velocity": 2.3},
+                    "limit": {"lower": -0.10, "upper": 1.10, "effort": 50.0, "velocity": 2.3},
                     "dynamics": {"damping": 0.12, "friction": 0.03},
                 },
                 {

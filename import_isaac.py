@@ -121,14 +121,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--graphics-device-id", type=int, default=0, help="CUDA device for rendering.")
     parser.add_argument("--cpu-sim", action="store_true", help="Force CPU simulation.")
     parser.add_argument("--gpu-pipeline", action="store_true", help="Enable GPU pipeline if supported.")
-    parser.add_argument("--stiffness", type=float, default=2200.0, help="Joint position-control stiffness.")
-    parser.add_argument("--damping", type=float, default=320.0, help="Joint position-control damping.")
-    parser.add_argument("--effort", type=float, default=25000.0, help="Default per-joint effort limit.")
-    parser.add_argument("--body-height", type=float, default=0.72, help="Initial base height above ground.")
+    parser.add_argument("--stiffness", type=float, default=60.0, help="Joint position-control stiffness.")
+    parser.add_argument("--damping", type=float, default=3.0, help="Joint position-control damping.")
+    parser.add_argument("--effort", type=float, default=150.0, help="Default per-joint effort limit.")
+    parser.add_argument("--body-height", type=float, default=0.50, help="Initial base height above ground.")
     parser.add_argument("--gait-frequency", type=float, default=0.85, help="Cycle frequency in Hz.")
     parser.add_argument("--swing-ratio-amplitude", type=float, default=0.26, help="Swing joint ratio amplitude around neutral.")
     parser.add_argument("--swing-lift-ratio", type=float, default=0.78, help="Lift joint ratio during swing phase.")
-    parser.add_argument("--stance-lift-ratio", type=float, default=0.54, help="Lift joint ratio during stance phase.")
+    parser.add_argument("--stance-lift-ratio", type=float, default=0.05, help="Lift joint ratio during stance phase.")
     parser.add_argument("--swing-drop-ratio", type=float, default=0.38, help="Drop joint ratio during swing phase.")
     parser.add_argument("--stance-drop-ratio", type=float, default=0.90, help="Drop joint ratio during stance phase.")
     return parser.parse_args()
@@ -543,6 +543,7 @@ def main() -> None:
             raise FileNotFoundError(f"URDF not found: {urdf_path}")
 
         asset_options = gymapi.AssetOptions()
+        asset_options.default_dof_drive_mode = int(gymapi.DOF_MODE_POS)
         asset_options.fix_base_link = False
         asset_options.disable_gravity = False
         asset_options.flip_visual_attachments = False

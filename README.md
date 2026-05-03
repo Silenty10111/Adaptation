@@ -19,6 +19,7 @@
 | `ssm_visualizer.py` | 普通 Python 环境（Adaptation） | **SSM 可视化工具**：从描述文件计算支撑多边形与 SSM，并把分析图保存到 `png/` 目录。 |
 | `import_isaac.py` | **unitree-rl 环境**（含 Isaac Gym） | **Isaac Gym 仿真入口**：加载 URDF，执行分组交替周期步态控制，绘制前进方向地面箭头，输出稳定性与力矩裕度诊断。 |
 | `test_gym.py` | **unitree-rl 环境**（含 Isaac Gym） | **Isaac Gym 静态加载验证**：批量加载多个变体 URDF，验证模型可正确导入并保持站立姿态。 |
+| `test_gait.py` | **unitree-rl 环境**（含 Isaac Gym） | **Isaac Gym 自适应步态验证**：结合 `plan_gait.py` 计算前进方向，分组交替步态控制，可视化前进箭头 / 支撑多边形 / 质心投影，并输出直线运动轨迹。 |
 
 ## 2. 环境要求
 
@@ -451,15 +452,16 @@ LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib /data/conda/envs/unitree-rl/bin/
 ```bash
 LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib /data/conda/envs/unitree-rl/bin/python import_isaac.py \
 	--headless --steps 2400 \
+	--body-height 0.50 \
 	--gait-frequency 0.85 \
 	--swing-ratio-amplitude 0.26 \
-	--stance-lift-ratio 0.54 --swing-lift-ratio 0.78 \
+	--stance-lift-ratio 0.05 --swing-lift-ratio 0.78 \
 	--stance-drop-ratio 0.90 --swing-drop-ratio 0.38
 ```
 
 新增参数说明：
 
-- `--body-height`：初始机身高度，过低时容易起步碰撞。
+- `--body-height`：初始机身高度（默认 0.50 m），需匹配腿长使足端能够触地。
 - `--gait-frequency`：步态频率（Hz）。
 - `--swing-ratio-amplitude`：摆动关节围绕中位点的摆幅比例。
 - `--stance-lift-ratio` / `--swing-lift-ratio`：支撑相/摆动相抬腿关节目标比例。
@@ -475,6 +477,113 @@ LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib /data/conda/envs/unitree-rl/bin/
 
 - 如果 `unitree-rl` 环境未安装 `shapely`，脚本会自动降级为“简化分组规划”（仍可仿真）。
 - 若要使用完整阶段一/阶段二几何规划，请在用于运行 `import_isaac.py` 的环境中安装 `shapely`。
+
+### 8a. `test_gait.py` — 自适应步态验证
+
+`test_gait.py` 将 `plan_gait.py` 的规划结果接入 Isaac Gym，执行**分组交替步态**并可视化。
+
+**运行方式：**
+
+```bash
+# 有界面 — 实时观察前进方向、支撑多边形、质心轨迹
+LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib \
+  /data/conda/envs/unitree-rl/bin/python test_gait.py
+
+# 无界面 — 输出运动距离与横向漂移
+LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib \
+  /data/conda/envs/unitree-rl/bin/python test_gait.py --headless --steps 2400
+```
+
+**可视化标注（仅在 Viewer 模式下显示）：**
+
+| 标注 | 颜色 | 含义 |
+|---|---|---|
+| 前进方向箭头 | 橙色 | 由 `final_forward_axis` 确定的头尾方向 |
+| 支撑多边形边框 | 绿色 | 足端凸包（实时跟踪 body_xy 偏移） |
+| 质心十字 | 青色 | `projected_com_xy` 投影质心位置 |
+
+**无界面输出示例：**
+
+```
+[Motion summary after 2400 steps]
+  start       = [0.0000, 0.0000]
+  end         = [0.4230, -0.0180]
+  forward dist  = +0.4221 m
+  lateral drift = -0.0193 m
+```
+
+**参数说明：**
+
+- `--body-height 0.50`：初始机身高度（m），需匹配腿长。
+- `--gait-frequency 0.85`：组间交替频率（Hz）。
+- `--swing-ratio-amplitude 0.26`：摆动关节围绕中位点的摆幅。
+- `--stance-lift-ratio 0.05` / `--swing-lift-ratio 0.78`：支撑/摆动相抬腿比例。
+- `--stance-drop-ratio 0.90` / `--swing-drop-ratio 0.38`：支撑/摆动相落腿比例。
+- `--stiffness 60.0` / `--damping 3.0` / `--effort 150.0`：位置控制器参数。
+
+### 8b. 前进方向确认原理（含扭矩贡献评分）
+
+前进方向不能仅由躯干几何或腿的分布决定，因为“朝向”不等于“能产生有效推力的方向”。
+本系统采用**两阶段判定**：
+
+**阶段一：PCA 几何初始轴（`initial_virtual_forward_axis`）**
+
+对支撑腿足端 XY 坐标构建加权协方差矩阵，PCA 提取最大特征值对应的特征向量
+作为初始候选轴 $\hat{\mathbf{u}}$。这一步提供的是**腿分布的几何对称轴**。
+
+**阶段二：扭矩贡献评分选方向（`final_forward_axis`）**
+
+对 $\pm\hat{\mathbf{u}}$ 两个候选方向分别计算推进力评分 $s_k$：
+
+$$s_k = \sum_{\text{腿 } i} \max\left(\hat{k} \cdot \hat{\mathbf{v}}_i,\ 0\right) \cdot |\mathbf{v}_i| \cdot w_{\text{phase},i} \cdot w_{\text{range},i}$$
+
+各项含义：
+
+| 因子 | 符号 | 物理含义 |
+|---|---|---|
+| 方向投影 | $\max(\hat{k} \cdot \hat{\mathbf{v}}_i, 0)$ | 仅计入向前挥动的腿，向后的摆动不贡献推进 |
+| 摆幅 | $\|\mathbf{v}_i\|$ | 摆动向量模长，对应腿的步幅能力 |
+| 相位增益 | $w_{\text{phase},i}$ | 摆动/抬腿/落腿相 ×1.15（正在产生推力），支撑相 ×0.75 |
+| 关节扭矩增益 | $w_{\text{range},i} = 1 + \min(\Delta\theta_i, 1.2)$ | $\Delta\theta_i$ 为第 $i$ 条腿的 swing 关节总活动范围（rad）。**范围越大，代表该腿能通过关节力矩产生的水平摆动幅度越大，推进能力越强** |
+
+> **为什么考虑关节扭矩范围？**
+> 
+> 足端位置分布（阶段一 PCA）只反映了“腿放在哪里”，不反映“腿能往哪个方向用力”。
+> 两条足端位置对称的腿，若 swing 关节范围分别为 $\pm 0.55$ rad 和 $\pm 0.12$ rad，
+> 它们的有效摆动幅度相差近 5 倍。仅靠几何位置无法区分这一差异，因此必须引入
+> **关节活动范围作为扭矩贡献的代理指标**，使评分向“更适合推动前进的腿”倾斜。
+> 
+> 最终选择得分高的一侧作为 `final_forward_axis`：
+> $$\hat{\mathbf{d}} = \arg\max_{k \in \{\pm\hat{\mathbf{u}}\}} s_k$$
+
+### 8c. 分组交替步态（匀速直线运动）
+
+分组策略将有效腿按最终前向轴的投影位置排序后交替分配：
+
+1. 将所有有效腿的足端位置投影到 `final_forward_axis` 上。
+2. 按投影坐标从小到大排序（沿轴向从前到后）。
+3. 交替分配：第 0, 2, 4, … 条 → `group_a`，第 1, 3, 5, … 条 → `group_b`。
+
+**控制方程：**
+
+设 `group_a` 相位为 $\phi(t) = 2\pi f t$，`group_b` 相位为 $\phi(t) + \pi$。
+两组的正弦波相位差 $\pi$，形成交替周期：
+
+$$
+\begin{cases}
+\text{lift}_i(t) = r_{\text{lift}}^{\text{stance}} + \Delta r_{\text{lift}} \cdot \max(\sin\phi_i(t), 0) \\
+\text{drop}_i(t) = r_{\text{drop}}^{\text{stance}} + \Delta r_{\text{drop}} \cdot \max(\sin\phi_i(t), 0) \\
+\text{swing}_i(t) = 0.5 + A \cdot d_i \cdot \sin\phi_i(t)
+\end{cases}
+$$
+
+其中 $d_i = \operatorname{sgn}(\mathbf{f}_i \cdot \hat{\mathbf{d}})$ 为摆动方向符号
+（前腿向前挥、后腿向后挥），$A$ 为摆幅参数。
+
+**该分组方式保证**：
+- 任意时刻，一组腿处于支撑相（推地），另一组处于摆动相（迈腿）。
+- 前腿向前挥动、后腿向后挥动，合力指向 $\hat{\mathbf{d}}$ 方向。
+- 无论机器人有 4 / 6 / 8 / 10 条腿，均无需调整控制拓扑。
 
 ## 9. 输出字段说明
 
@@ -511,6 +620,9 @@ LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib /data/conda/envs/unitree-rl/bin/
 - `import_isaac.py` 新增 `draw_forward_direction_line()`：每帧在地面绘制橙色箭头标注机器人前进方向。
 - `import_isaac.py` 移除重复的 `estimate_static_margin`，统一使用 `stability.py` 模块计算。
 - README 新增 4a（CGPM/SSM 公式推导）与 4b（前进方向计算原理与公式）两节。
+- `adaptive_gait.py` 新增 `compute_adaptive_plan()`：实现完整阶段一 (PCA 初始轴 + 扭矩评分选方向) 与阶段二 (分组拓扑 + 安全走廊 + 平移代偿)，替代之前缺失的实现。
+- 新建 `test_gait.py`：在 Isaac Gym 中验证自适应步态，可视化前进方向箭头 / 支撑多边形 / 质心投影，实现分组交替匀速直线运动，并输出轨迹统计。
+- README 新增 8a (`test_gait.py` 使用说明)、8b (前进方向确认原理含关节扭矩增益推导)、8c (分组交替步态控制方程)。
 
 ## 11. 机器环境备注
 
@@ -519,3 +631,17 @@ LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib /data/conda/envs/unitree-rl/bin/
 ```bash
 LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib /data/conda/envs/unitree-rl/bin/python test_gym.py
 ```
+
+## 12. 仿真调试备注（Isaac Gym）
+
+在将生成的 URDF 导入 Isaac Gym 并尝试应用关节位置控制（Position Control）时，必须注意以下几点：
+
+1. **缺省驱动模式（`default_dof_drive_mode`）**：
+   哪怕随后使用 `set_actor_dof_properties` 将 `driveMode` 填充为 `gymapi.DOF_MODE_POS`，在 `AssetOptions` 初始化时也必须主动配置：
+   ```python
+   asset_options.default_dof_drive_mode = int(gymapi.DOF_MODE_POS)
+   ```
+   若遗漏，下层 PhysX 引擎可能不会创建基于位置的力矩控制器，导致机器人出现 **“完全像没有输出扭矩一样瘫倒”** 的异常。
+
+2. **过载刚度引起数值爆炸翻车（Flipping Over）**：
+   将 `test_gym.py` 和 `import_isaac.py` 中的刚度（Stiffness）设为高达 `1800~6500` 时，即使对于静态维持依然具有严重的潜在数值不稳定性。在默认 `dt=1/60s` 的设定下，由于机器人质量较轻，过高的刚合阻尼会产生极大角加速度并导致向外发散或相互穿模反弹，表现为 **部分机器人剧烈抖动或直接空翻**。正确的比例约在 `stiffness=40~80`、`damping=2~5`（对应力矩缩放后）。

@@ -17,7 +17,7 @@ import pybullet_data
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--count", type=int, default=20, help="需要生成并展示的机器人数量。")
+    parser.add_argument("--count", type=int, default=10, help="需要生成并展示的机器人数量。")
     parser.add_argument("--seed-base", type=int, default=7, help="第一个模型使用的随机种子。")
     parser.add_argument("--seed-step", type=int, default=17, help="相邻模型种子间隔。")
     parser.add_argument("--spacing", type=float, default=2.0, help="模型在 X 轴上的摆放间距。")
