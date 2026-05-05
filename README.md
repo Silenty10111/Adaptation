@@ -19,7 +19,8 @@
 | `ssm_visualizer.py` | 普通 Python 环境（Adaptation） | **SSM 可视化工具**：从描述文件计算支撑多边形与 SSM，并把分析图保存到 `png/` 目录。 |
 | `import_isaac.py` | **unitree-rl 环境**（含 Isaac Gym） | **Isaac Gym 仿真入口**：加载 URDF，执行分组交替周期步态控制，绘制前进方向地面箭头，输出稳定性与力矩裕度诊断。 |
 | `test_gym.py` | **unitree-rl 环境**（含 Isaac Gym） | **Isaac Gym 静态加载验证**：批量加载多个变体 URDF，验证模型可正确导入并保持站立姿态。 |
-| `test_gait.py` | **unitree-rl 环境**（含 Isaac Gym） | **Isaac Gym 自适应步态验证**：结合 `plan_gait.py` 计算前进方向，分组交替步态控制，可视化前进箭头 / 支撑多边形 / 质心投影，并输出直线运动轨迹。 |
+| `test_gait.py` | **unitree-rl 环境**（含 Isaac Gym） | **Isaac Gym 自适应步态验证**：结合 `plan_gait.py` 计算前进方向，分组交替步态，可视化前进箭头 / 支撑多边形 / 分组标记 / 质心投影，输出直线运动轨迹及姿态角。 |
+| `test_leg_cycle.py` | 普通 Python 环境（Adaptation） | **步态周期 PDF 报告生成器**：模拟一个完整步态周期，绘制所有腿的 lift/swing/drop 关节目标曲线 + 相位甘特图 + 统计摘要，输出 PDF。 |
 
 ## 2. 环境要求
 
@@ -485,41 +486,55 @@ LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib /data/conda/envs/unitree-rl/bin/
 **运行方式：**
 
 ```bash
-# 有界面 — 实时观察前进方向、支撑多边形、质心轨迹
+# 有界面 — 实时观察前进方向、分组标记、支撑多边形
 LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib \
   /data/conda/envs/unitree-rl/bin/python test_gait.py
 
-# 无界面 — 输出运动距离与横向漂移
+# 无界面 — 输出运动距离与姿态角
 LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib \
-  /data/conda/envs/unitree-rl/bin/python test_gait.py --headless --steps 2400
+  /data/conda/envs/unitree-rl/bin/python test_gait.py \
+  --headless --steps 2400 --hold-steps 300
 ```
 
-**可视化标注（仅在 Viewer 模式下显示）：**
+**可视化标注（Viewer 模式）：**
 
 | 标注 | 颜色 | 含义 |
 |---|---|---|
-| 前进方向箭头 | 橙色 | 由 `final_forward_axis` 确定的头尾方向 |
-| 支撑多边形边框 | 绿色 | 足端凸包（实时跟踪 body_xy 偏移） |
-| 质心十字 | 青色 | `projected_com_xy` 投影质心位置 |
+| 前进方向箭头 | **橙色** (1.5 m 长) | 由 `final_forward_axis` 确定的头尾方向 |
+| 支撑多边形边框 | **绿色** | 足端凸包（实时跟踪 body_xy 偏移） |
+| 质心十字 | **青色** | `projected_com_xy` 投影质心位置 |
+| 足端标记 | **蓝色** = group_a, **红色** = group_b | 腿分组标识 |
+| 足端明暗 | **亮色** = 支撑相, **灰色** = 摆动相 | 当前步态相位 |
+| 终端输出 | 每 200 帧打印 `heading = xxx°` | 前进方向角 |
 
 **无界面输出示例：**
 
 ```
+[ 400/2400] body_xy = [0.0712, -0.0031]  roll = -1.2°  pitch = 0.8°
+...
 [Motion summary after 2400 steps]
-  start       = [0.0000, 0.0000]
-  end         = [0.4230, -0.0180]
   forward dist  = +0.4221 m
   lateral drift = -0.0193 m
 ```
 
-**参数说明：**
+**新增 / 变更参数：**
 
-- `--body-height 0.50`：初始机身高度（m），需匹配腿长。
-- `--gait-frequency 0.85`：组间交替频率（Hz）。
-- `--swing-ratio-amplitude 0.26`：摆动关节围绕中位点的摆幅。
-- `--stance-lift-ratio 0.05` / `--swing-lift-ratio 0.78`：支撑/摆动相抬腿比例。
-- `--stance-drop-ratio 0.90` / `--swing-drop-ratio 0.38`：支撑/摆动相落腿比例。
-- `--stiffness 60.0` / `--damping 3.0` / `--effort 150.0`：位置控制器参数。
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `--hold-steps` | **300** | 步态启动前静止稳定步数（自适应 sag 补偿） |
+| `--gpu-pipeline` | off | 启用 GPU 渲染管线 |
+| `--body-height` | 0.50 m | 初始机身高度 |
+| `--gait-frequency` | 0.85 Hz | 组间交替频率 |
+| `--swing-ratio-amplitude` | 0.26 | 摆动关节摆幅 |
+| `--stance-lift-ratio` / `--swing-lift-ratio` | 0.05 / 0.78 | 支撑/摆动相抬腿比例 |
+| `--stance-drop-ratio` / `--swing-drop-ratio` | 0.90 / 0.38 | 支撑/摆动相落腿比例 |
+
+**稳定性改进（相比初版）：**
+
+- **按关节类型分级 PD 参数**：drop 关节承力最大 (stiffness=80 / damping=4 / effort=200)，lift 次之 (50 / 2.5 / 120)，swing 最小 (60 / 3 / 150)，均来自 `test_gym.py` 已验证的静态站立配置。
+- **Smoothstep 过渡**：用 Hermite 平滑插值取代 `max(sin,0)`，消除支撑↔摆动切换处的力矩突变（一阶导连续）。
+- **静止稳定阶段**：步态前执行 `--hold-steps` 步自适应 sag 补偿站立，确保初始姿态稳定。
+- **姿态角监控**：headless 模式每 400 步输出 body roll / pitch。
 
 ### 8b. 前进方向确认原理（含扭矩贡献评分）
 
@@ -585,6 +600,49 @@ $$
 - 前腿向前挥动、后腿向后挥动，合力指向 $\hat{\mathbf{d}}$ 方向。
 - 无论机器人有 4 / 6 / 8 / 10 条腿，均无需调整控制拓扑。
 
+### 8d. `test_leg_cycle.py` — 步态周期 PDF 报告
+
+**运行环境**：Adaptation（普通 Python，无需 Isaac Gym），依赖 matplotlib。
+
+**功能**：模拟一个完整步态周期（$T = 1 / f$），输出四页 PDF 报告。
+
+```bash
+# 使用默认参数生成
+python test_leg_cycle.py
+
+# 自定义参数
+python test_leg_cycle.py \
+  --gait-frequency 0.85 \
+  --stance-lift-ratio 0.05 --swing-lift-ratio 0.78 \
+  --stance-drop-ratio 0.90 --swing-drop-ratio 0.38 \
+  --swing-ratio-amplitude 0.26 \
+  --samples 120 \
+  --output png/my_gait_report.pdf
+```
+
+**PDF 内容布局：**
+
+| 子图 | 内容 |
+|---|---|
+| 左上 | **Lift 关节目标曲线**：每条腿一条曲线，灰色半透明竖带标记摆动相 |
+| 右上 | **Swing 关节目标曲线**：同上布局 |
+| 左下 | **Drop 关节目标曲线**：同上布局 |
+| 右下 | **相位甘特图**：每条腿一行，绿色 = 支撑相，灰色 = 摆动相，清晰展示 π 相位差交替模式 |
+| 底部 | **统计摘要表**：支撑/摆动占比、各关节每腿均值与摆幅范围、参数表 |
+
+**参数：**
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `--gait-frequency` | 0.85 | 步态频率 (Hz) |
+| `--stance-lift-ratio` | 0.05 | 支撑相抬腿比例 |
+| `--swing-lift-ratio` | 0.78 | 摆动相抬腿比例 |
+| `--stance-drop-ratio` | 0.90 | 支撑相落腿比例 |
+| `--swing-drop-ratio` | 0.38 | 摆动相落腿比例 |
+| `--swing-ratio-amplitude` | 0.26 | 摆动关节摆幅 |
+| `--samples` | 120 | 每周期采样点数 |
+| `--output` | `png/leg_cycle_report.pdf` | 输出路径 |
+
 ## 9. 输出字段说明
 
 `plan_gait.py` 的输出结果包含以下核心字段：
@@ -623,6 +681,10 @@ $$
 - `adaptive_gait.py` 新增 `compute_adaptive_plan()`：实现完整阶段一 (PCA 初始轴 + 扭矩评分选方向) 与阶段二 (分组拓扑 + 安全走廊 + 平移代偿)，替代之前缺失的实现。
 - 新建 `test_gait.py`：在 Isaac Gym 中验证自适应步态，可视化前进方向箭头 / 支撑多边形 / 质心投影，实现分组交替匀速直线运动，并输出轨迹统计。
 - README 新增 8a (`test_gait.py` 使用说明)、8b (前进方向确认原理含关节扭矩增益推导)、8c (分组交替步态控制方程)。
+- `test_gait.py` 稳定性增强：按关节类型分级 PD 参数 (沿用 test_gym 验证值)、smoothstep 平滑过渡消除力矩突变、`--hold-steps` 步态前静止稳定阶段、headless 模式姿态角 (roll/pitch) 监控。
+- `test_gait.py` 可视化增强：前进箭头加长至 1.5 m、足端按 group_a (蓝) / group_b (红) 颜色标记、支撑/摆动相明暗区分、终端每 200 帧打印前进方向角。
+- 新建 `test_leg_cycle.py`：在 Adaptation 环境运行，matplotlib 生成 PDF 步态周期报告 (4 子图 + 甘特图 + 统计摘要)。
+- README 新增 8d (`test_leg_cycle.py` 使用说明及 PDF 内容布局)。
 
 ## 11. 机器环境备注
 

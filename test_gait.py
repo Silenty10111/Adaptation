@@ -138,6 +138,29 @@ def resolve_joint_triplets(
 
 
 # ---------------------------------------------------------------------------
+# Math helpers
+# ---------------------------------------------------------------------------
+
+def smoothstep(edge0: float, edge1: float, x: float) -> float:
+    """Smooth Hermite interpolation between 0 and 1, zero-derivative at edges."""
+    t = max(0.0, min(1.0, (x - edge0) / max(edge1 - edge0, 1e-9)))
+    return t * t * (3.0 - 2.0 * t)
+
+
+def quat_to_euler(w: float, x: float, y: float, z: float) -> tuple:
+    """Convert quaternion (w,x,y,z) to roll, pitch, yaw in radians."""
+    sinr = 2.0 * (w * x + y * z)
+    cosr = 1.0 - 2.0 * (x * x + y * y)
+    roll = math.atan2(sinr, cosr)
+    sinp = 2.0 * (w * y - z * x)
+    pitch = math.asin(max(-1.0, min(1.0, sinp)))
+    siny = 2.0 * (w * z + x * y)
+    cosy = 1.0 - 2.0 * (y * y + z * z)
+    yaw = math.atan2(siny, cosy)
+    return roll, pitch, yaw
+
+
+# ---------------------------------------------------------------------------
 # Visualisation
 # ---------------------------------------------------------------------------
 
@@ -152,7 +175,7 @@ def draw_arrow(gym, viewer, env, gymapi, origin: List[float], direction: List[fl
 
     ex, ey = ox + fx * length, oy + fy * length
     head = length * 0.20
-    spread = 0.35
+    spread = 0.45
     px, py = -fy, fx
     left = (ex - fx * head + px * head * spread, ey - fy * head + py * head * spread)
     right = (ex - fx * head - px * head * spread, ey - fy * head - py * head * spread)
@@ -166,12 +189,31 @@ def draw_arrow(gym, viewer, env, gymapi, origin: List[float], direction: List[fl
     gym.add_lines(viewer, env, 3, verts, colors)
 
 
+def draw_cross(gym, viewer, env, gymapi, cx: float, cy: float,
+               size: float, z: float, rgb: List[float]) -> None:
+    verts = np.array([
+        [cx - size, cy, z, cx + size, cy, z],
+        [cx, cy - size, z, cx, cy + size, z],
+    ], dtype=np.float32)
+    colors = np.array([rgb, rgb], dtype=np.float32)
+    gym.add_lines(viewer, env, 2, verts, colors)
+
+
 def get_body_xy(gym, env, actor, gymapi) -> List[float]:
     states = gym.get_actor_rigid_body_states(env, actor, gymapi.STATE_POS)
     if states is None or len(states) == 0:
         return [0.0, 0.0]
     p = states["pose"]["p"][0]
     return [float(p["x"]), float(p["y"])]
+
+
+def get_body_attitude(gym, env, actor, gymapi) -> tuple:
+    """Return (roll, pitch, yaw) of the actor's root body in radians."""
+    states = gym.get_actor_rigid_body_states(env, actor, gymapi.STATE_POS)
+    if states is None or len(states) == 0:
+        return (0.0, 0.0, 0.0)
+    r = states["pose"]["r"][0]
+    return quat_to_euler(float(r["w"]), float(r["x"]), float(r["y"]), float(r["z"]))
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +266,8 @@ def build_gait_targets(
     for leg_id, joints in triplets.items():
         lg_phase = leg_group_phase(leg_id, group_a, group_b, phase)
         swing_wave = float(np.sin(lg_phase))
-        swing_alpha = max(swing_wave, 0.0)
+        # Smoothstep: sin ∈ [-1,1] → smooth transition ∈ [0,1], zero-derivative at stance↔swing
+        swing_alpha = smoothstep(-0.05, 0.05, swing_wave)
 
         foot_xy_vec = fmap.get(leg_id, np.zeros(2, dtype=float))
         dir_sign = 1.0 if float(np.dot(foot_xy_vec, forward_axis)) >= 0.0 else -1.0
@@ -258,13 +301,14 @@ def parse_args() -> argparse.Namespace:
                    default=Path(ASSET_DIR_NAME) / "generated_robot.urdf")
     p.add_argument("--headless", action="store_true")
     p.add_argument("--steps", type=int, default=2400)
+    p.add_argument("--hold-steps", type=int, default=300,
+                   help="Warm-up stabilisation steps with static standing posture before gait begins.")
     p.add_argument("--compute-device-id", type=int, default=0)
     p.add_argument("--graphics-device-id", type=int, default=0)
     p.add_argument("--cpu-sim", action="store_true")
+    p.add_argument("--gpu-pipeline", action="store_true",
+                   help="Enable GPU rendering pipeline (disabled by default).")
     p.add_argument("--body-height", type=float, default=0.50)
-    p.add_argument("--stiffness", type=float, default=60.0)
-    p.add_argument("--damping", type=float, default=3.0)
-    p.add_argument("--effort", type=float, default=150.0)
     p.add_argument("--gait-frequency", type=float, default=0.85)
     p.add_argument("--swing-ratio-amplitude", type=float, default=0.26)
     p.add_argument("--swing-lift-ratio", type=float, default=0.78)
@@ -306,7 +350,7 @@ def main() -> int:
     sim_params.dt = 1.0 / 60.0
     sim_params.substeps = 2
     use_gpu = not args.cpu_sim
-    sim_params.use_gpu_pipeline = False
+    sim_params.use_gpu_pipeline = bool(args.gpu_pipeline)
     sim_params.physx.use_gpu = use_gpu
     sim_params.physx.num_position_iterations = 8
     sim_params.physx.num_velocity_iterations = 2
@@ -328,6 +372,7 @@ def main() -> int:
         plane_params.normal = gymapi.Vec3(0.0, 0.0, 1.0)
         plane_params.static_friction = 1.8
         plane_params.dynamic_friction = 1.6
+        plane_params.restitution = 0.0
         gym.add_ground(sim, plane_params)
 
         # Asset
@@ -363,16 +408,40 @@ def main() -> int:
             print("[ERROR] Failed to create actor.")
             return 1
 
-        # Configure DOFs
+        # ---- Per-joint DOF configuration (differentiated by joint role) -----
         dof_props = gym.get_actor_dof_properties(env, actor)
         dof_props["driveMode"].fill(gymapi.DOF_MODE_POS)
-        dof_props["stiffness"].fill(float(args.stiffness))
-        dof_props["damping"].fill(float(args.damping))
+        dof_names = gym.get_asset_dof_names(asset)
+        dof_count = len(dof_names)
+
+        # Base defaults
+        dof_props["stiffness"].fill(40.0)
+        dof_props["damping"].fill(2.0)
         if "effort" in dof_props.dtype.names:
-            dof_props["effort"].fill(float(args.effort))
+            dof_props["effort"].fill(100.0)
+        if "armature" in dof_props.dtype.names:
+            dof_props["armature"].fill(0.01)
+
+        # Per-joint overrides — same values as test_gym.py verified standing config
+        for idx, name in enumerate(dof_names):
+            if "_swing" in name:
+                dof_props["stiffness"][idx] = 60.0
+                dof_props["damping"][idx] = 3.0
+                if "effort" in dof_props.dtype.names:
+                    dof_props["effort"][idx] = 150.0
+            elif "_drop" in name:
+                dof_props["stiffness"][idx] = 80.0
+                dof_props["damping"][idx] = 4.0
+                if "effort" in dof_props.dtype.names:
+                    dof_props["effort"][idx] = 200.0
+            elif "_lift" in name:
+                dof_props["stiffness"][idx] = 50.0
+                dof_props["damping"][idx] = 2.5
+                if "effort" in dof_props.dtype.names:
+                    dof_props["effort"][idx] = 120.0
+
         gym.set_actor_dof_properties(env, actor, dof_props)
 
-        dof_count = gym.get_asset_dof_count(asset)
         lower = np.asarray(dof_props["lower"], dtype=np.float32)
         upper = np.asarray(dof_props["upper"], dtype=np.float32)
         default_targets = 0.5 * (
@@ -382,15 +451,60 @@ def main() -> int:
 
         triplets = resolve_joint_triplets(gym, env, actor, description)
 
-        # Initialise all joints to mid-range
+        # ---- Build standing posture targets (legs angled down to ground) ----
+        stand_targets = default_targets.copy()
+        for leg_id, joints in triplets.items():
+            stand_targets[joints["lift_idx"]] = ratio_to_joint(
+                joints["lift_lower"], joints["lift_upper"], 0.05,
+            )
+            stand_targets[joints["drop_idx"]] = ratio_to_joint(
+                joints["drop_lower"], joints["drop_upper"], 0.995,
+            )
+            stand_targets[joints["swing_idx"]] = ratio_to_joint(
+                joints["swing_lower"], joints["swing_upper"], 0.50,
+            )
+
+        finite_lower = np.where(np.isfinite(lower), lower, -1e9)
+        finite_upper = np.where(np.isfinite(upper), upper, 1e9)
+        stand_targets = np.clip(stand_targets, finite_lower, finite_upper)
+
         dof_states = gym.get_actor_dof_states(env, actor, gymapi.STATE_ALL)
-        dof_states["pos"] = default_targets
+        dof_states["pos"] = stand_targets
         dof_states["vel"].fill(0.0)
         gym.set_actor_dof_states(env, actor, dof_states, gymapi.STATE_ALL)
 
         print(f"[OK] Asset loaded: {dof_count} DOFs, "
               f"{gym.get_asset_rigid_body_count(asset)} bodies")
         print(f"[OK] Standing at body height {args.body_height:.2f} m")
+
+        # ---- Warm-up: static hold-stabilisation ------------------------------
+        hold_steps = max(args.hold_steps, 0)
+        if hold_steps > 0:
+            print(f"[HOLD] Stabilising for {hold_steps} steps ...")
+            # Adaptive-sag controller state (reuses test_gym.py logic)
+            for _ in range(hold_steps):
+                dof_states_pos = gym.get_actor_dof_states(
+                    env, actor, gymapi.STATE_POS,
+                )
+                joint_pos = np.asarray(dof_states_pos["pos"], dtype=np.float32)
+                for idx, name in enumerate(dof_names):
+                    sag = stand_targets[idx] - joint_pos[idx]
+                    if "_drop" in name and sag > 0.004:
+                        stand_targets[idx] = min(
+                            finite_upper[idx],
+                            stand_targets[idx] + min(0.012, 0.22 * sag),
+                        )
+                    elif "_lift" in name and sag > 0.004:
+                        stand_targets[idx] = max(
+                            finite_lower[idx],
+                            stand_targets[idx] - min(0.008, 0.16 * sag),
+                        )
+                stand_targets = np.clip(stand_targets, finite_lower, finite_upper)
+                gym.set_actor_dof_position_targets(env, actor, stand_targets)
+                gym.simulate(sim)
+                gym.fetch_results(sim, True)
+            print("[HOLD] Stabilisation complete.")
+
         print(f"[OK] Gait: {args.gait_frequency} Hz, "
               f"groups A/B phase-offset = π")
 
@@ -399,7 +513,10 @@ def main() -> int:
         group_a = topo["groups"]["group_a"]
         group_b = topo["groups"]["group_b"]
 
-        com_trail: List[List[float]] = []  # record body trajectory in headless mode
+        # Foot positions in world frame from description (offsets from body)
+        fmap = foot_xy_map(description)
+
+        com_trail: List[List[float]] = []
         sim_time = 0.0
         dt = sim_params.dt
 
@@ -412,12 +529,15 @@ def main() -> int:
             cam_target = gymapi.Vec3(0.0, 0.0, 0.35)
             gym.viewer_camera_look_at(viewer, env, cam_pos, cam_target)
 
-            print("[OK] Viewer open — close window to exit.")
+            heading_deg = math.degrees(math.atan2(forward_axis[1], forward_axis[0]))
+            print(f"[OK] Viewer open — heading = {heading_deg:.1f}° — close window to exit.")
+            frame_count = 0
             while not gym.query_viewer_has_closed(viewer):
                 gym.clear_lines(viewer)
+                frame_count += 1
 
                 targets = build_gait_targets(
-                    description, gait_plan, triplets, default_targets, sim_time,
+                    description, gait_plan, triplets, stand_targets.copy(), sim_time,
                     args.gait_frequency, args.swing_ratio_amplitude,
                     args.stance_lift_ratio, args.swing_lift_ratio,
                     args.stance_drop_ratio, args.swing_drop_ratio,
@@ -427,35 +547,57 @@ def main() -> int:
                 gym.fetch_results(sim, True)
                 gym.step_graphics(sim)
 
-                # Draw forward-direction arrow
                 body_xy = get_body_xy(gym, env, actor, gymapi)
-                draw_arrow(gym, viewer, env, gymapi, body_xy, forward_axis,
-                           length=1.0, z=0.008, rgb=[1.0, 0.45, 0.0])
 
-                # Draw support polygon (green) when available
+                # 1. Forward-direction arrow (orange, 1.5 m)
+                draw_arrow(gym, viewer, env, gymapi, body_xy, forward_axis,
+                           length=1.5, z=0.012, rgb=[1.0, 0.45, 0.0])
+
+                # 2. Per-leg foot-position markers coloured by group & phase
+                phase_now = 2.0 * np.pi * args.gait_frequency * sim_time
+                for leg_id, joints in triplets.items():
+                    lg_ph = leg_group_phase(leg_id, group_a, group_b, phase_now)
+                    in_swing = float(np.sin(lg_ph)) > 0.0
+                    ft_xy = fmap.get(leg_id, np.zeros(2, dtype=float))
+                    fx_w = body_xy[0] + ft_xy[0]
+                    fy_w = body_xy[1] + ft_xy[1]
+
+                    if in_swing:
+                        rgb_pt = [0.55, 0.55, 0.55]    # grey = swing
+                    elif leg_id in group_a:
+                        rgb_pt = [0.10, 0.40, 0.90]    # blue = group_a stance
+                    else:
+                        rgb_pt = [0.90, 0.25, 0.20]    # red = group_b stance
+
+                    draw_cross(gym, viewer, env, gymapi, fx_w, fy_w,
+                               size=0.04, z=0.006, rgb=rgb_pt)
+
+                # 3. Support polygon (green)
                 poly = gait_plan.get("support_polygon_xy", [])
                 if len(poly) >= 3:
                     p_arr = np.array(poly, dtype=float)
-                    com_xy = np.array(gait_plan.get("projected_com_xy", [0.0, 0.0]), dtype=float)
-                    # offset polygon to current body position
-                    p_off = p_arr + np.array(body_xy) - com_xy
-                    for i in range(len(p_off)):
-                        a = p_off[i]
-                        b = p_off[(i + 1) % len(p_off)]
-                        verts = np.array([[a[0], a[1], 0.004, b[0], b[1], 0.004]], dtype=np.float32)
-                        colors = np.array([[0.0, 0.85, 0.0]], dtype=np.float32)
-                        gym.add_lines(viewer, env, 1, verts, colors)
-                    # Also draw CoM cross
-                    cx, cy = body_xy[0], body_xy[1]
-                    s = 0.06
-                    verts_com = np.array([
-                        [cx - s, cy, 0.004, cx + s, cy, 0.004],
-                        [cx, cy - s, 0.004, cx, cy + s, 0.004],
-                    ], dtype=np.float32)
-                    colors_com = np.array(
-                        [[0.0, 1.0, 1.0], [0.0, 1.0, 1.0]], dtype=np.float32,
+                    com_xy_arr = np.array(
+                        gait_plan.get("projected_com_xy", [0.0, 0.0]), dtype=float,
                     )
-                    gym.add_lines(viewer, env, 2, verts_com, colors_com)
+                    p_off = p_arr + np.array(body_xy) - com_xy_arr
+                    n = len(p_off)
+                    verts_poly = np.zeros((n, 6), dtype=np.float32)
+                    colors_poly = np.tile([0.0, 0.85, 0.0], (n, 1)).astype(np.float32)
+                    for i in range(n):
+                        a = p_off[i]
+                        b = p_off[(i + 1) % n]
+                        verts_poly[i] = [a[0], a[1], 0.004, b[0], b[1], 0.004]
+                    gym.add_lines(viewer, env, n, verts_poly, colors_poly)
+
+                    # 4. CoM projection (cyan cross)
+                    draw_cross(gym, viewer, env, gymapi, body_xy[0], body_xy[1],
+                               size=0.06, z=0.004, rgb=[0.0, 1.0, 1.0])
+
+                # 5. Heading angle print every 200 frames
+                if frame_count % 200 == 1:
+                    hdg = math.degrees(math.atan2(forward_axis[1], forward_axis[0]))
+                    print(f"[{frame_count:5d}] heading = {hdg:.1f}°  "
+                          f"body_xy = [{body_xy[0]:.3f}, {body_xy[1]:.3f}]")
 
                 gym.draw_viewer(viewer, sim, True)
                 gym.sync_frame_time(sim)
@@ -463,7 +605,7 @@ def main() -> int:
         else:
             for step in range(max(args.steps, 1)):
                 targets = build_gait_targets(
-                    description, gait_plan, triplets, default_targets, sim_time,
+                    description, gait_plan, triplets, stand_targets.copy(), sim_time,
                     args.gait_frequency, args.swing_ratio_amplitude,
                     args.stance_lift_ratio, args.swing_lift_ratio,
                     args.stance_drop_ratio, args.swing_drop_ratio,
@@ -473,11 +615,14 @@ def main() -> int:
                 gym.fetch_results(sim, True)
 
                 body_xy = get_body_xy(gym, env, actor, gymapi)
+                roll, pitch, _ = get_body_attitude(gym, env, actor, gymapi)
                 com_trail.append(body_xy)
 
                 if (step + 1) % 400 == 0:
                     print(f"[{step + 1:5d}/{args.steps}] "
-                          f"body_xy = [{body_xy[0]:.4f}, {body_xy[1]:.4f}]")
+                          f"body_xy = [{body_xy[0]:.4f}, {body_xy[1]:.4f}]  "
+                          f"roll = {math.degrees(roll):.1f}°  "
+                          f"pitch = {math.degrees(pitch):.1f}°")
 
                 sim_time += dt
 
@@ -488,7 +633,9 @@ def main() -> int:
                 forward = np.array(forward_axis, dtype=float)
                 forward = forward / max(float(np.linalg.norm(forward)), 1e-9)
                 fwd_dist = float(np.dot(displacement, forward))
-                lat_dist = float(np.dot(displacement, np.array([-forward[1], forward[0]], dtype=float)))
+                lat_dist = float(np.dot(
+                    displacement, np.array([-forward[1], forward[0]], dtype=float),
+                ))
                 print(f"\n[Motion summary after {args.steps} steps]")
                 print(f"  start       = {trail[0].tolist()}")
                 print(f"  end         = {trail[-1].tolist()}")
