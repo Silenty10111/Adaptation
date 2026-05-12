@@ -24,7 +24,7 @@ import numpy as np
 
 TARGET_PYTHON = "/data/conda/envs/unitree-rl/bin/python"
 TARGET_LD_PATH = "/data/conda/envs/unitree-rl/lib"
-ASSET_DIR_NAME = "robot_assets"
+ASSET_DIR_NAME = "robot_assets/standard_hexapod"
 
 
 # ---------------------------------------------------------------------------

@@ -707,3 +707,56 @@ LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib /data/conda/envs/unitree-rl/bin/
 
 2. **过载刚度引起数值爆炸翻车（Flipping Over）**：
    将 `test_gym.py` 和 `import_isaac.py` 中的刚度（Stiffness）设为高达 `1800~6500` 时，即使对于静态维持依然具有严重的潜在数值不稳定性。在默认 `dt=1/60s` 的设定下，由于机器人质量较轻，过高的刚合阻尼会产生极大角加速度并导致向外发散或相互穿模反弹，表现为 **部分机器人剧烈抖动或直接空翻**。正确的比例约在 `stiffness=40~80`、`damping=2~5`（对应力矩缩放后）。
+
+## 13. 步态控制调试备注（test_gait.py & test_standard_gait.py）
+
+### 13.1 摆腿方向符号错误（Dir Sign Bug）
+
+`test_gait.py` 和 `test_standard_gait.py` 早期版本中，计算摆腿方向符号（`dir_sign` / `ds`）时错误地使用了脚端位置与**前进轴**的点积（纵向，X分量），正确做法是与**侧向轴**（垂直于前进方向）做点积：
+
+```python
+# 错误写法（已废弃）：
+dir_sign = 1.0 if dot(foot_xy, forward_axis) >= 0.0 else -1.0
+
+# 正确写法：
+lateral_axis = np.array([-forward_axis[1], forward_axis[0]])  # 前进方向左侧90°
+lateral_pos = dot(foot_xy, lateral_axis)
+dir_sign = -1.0 if lateral_pos > 0.0 else 1.0
+```
+
+**物理原因**：摆腿关节（swing）绕 Z 轴旋转，对于侧向挂腿的机器人：
+- 身体左侧（+Y）的腿：关节**负向**旋转才会使脚端向前（+X）运动 → `dir_sign = -1`
+- 身体右侧（-Y）的腿：关节**正向**旋转才会使脚端向前（+X）运动 → `dir_sign = +1`
+
+原来使用前进轴点积会导致靠前的腿（foot_x > 0）和靠后的腿（foot_x < 0）获得相反的符号，使前半部分的腿产生的摆动力方向完全相反，机器人原地乱晃甚至无法前进。
+
+### 13.2 smoothstep 过渡窗口过窄（急停抖动问题）
+
+早期使用 `smoothstep(-0.05, 0.05, sin(phase))` 的过渡区间非常窄，sin 值从 -0.05 变化到 0.05 大约只占步态周期的 **1%**（在 60 Hz 下约 1 个仿真步），导致站立→摆腿切换几乎是瞬间完成的，身体会产生剧烈冲击并倾倒。
+
+修复后使用 `smoothstep(-0.30, 0.30, sin(phase))`，过渡区间约占步态周期的 **25%**（约 13 个仿真步），切换平滑，动态稳定性显著改善。
+
+### 13.3 关键 Bug：髋关节球体与机体碰撞体重叠（`collapse_fixed_joints` 必须为 True）
+
+在由 `test_standard_gait.py` 生成的标准六足 URDF 中，每条腿的髋关节球（`leg_N_hip`，半径 0.035m）通过固定关节挂在机体侧面，但因为 `attach_clearance` 仅约 2.5cm，球面会向内突入机体碰撞网格 **0.9–2.2cm**。
+
+当 `collapse_fixed_joints = False` 时，Isaac Gym 将这些髋球作为独立物理体处理，它们与机体之间产生持续碰撞。后续每当关节电机尝试转动腿部，腿部立刻顶到机体，关节力矩无法驱动腿运动，反力全部传递给机体 → **腿不动、机体移动**。
+
+**正确设置**（两个脚本均已修复）：
+
+```python
+asset_options.collapse_fixed_joints = True   # 将所有固定关节子链合并进父体
+```
+
+通过合并：
+- `base_link` + 所有 `leg_N_hip` 球 → 一个复合体（不再有髋球-机体内部碰撞）
+- `leg_N_upper` + `leg_N_knee` → 每腿一个复合上臂体
+- `leg_N_lower` + `leg_N_foot` → 每腿一个复合下臂体
+
+活动自由度（revolute joints）完全不受影响，DOF 名称/索引不变。
+
+### 13.4 PD 增益需与机体重量匹配
+
+机体 9.7 kg，3 条支撑腿分担约 32 N/腿。提升位关节到 lift 轴的力矩臂约 0.3m → 每关节需承受 ~10 N·m。
+
+旧增益（stiffness=50 N·m/rad）导致 ~0.2 rad（11°）的角度下沉，视觉上是"机器人缓慢坐到地上"。正确最小增益约 200 N·m/rad，对应 ~3° 内的下沉量。
