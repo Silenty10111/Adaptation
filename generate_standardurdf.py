@@ -246,17 +246,19 @@ def generate(args: argparse.Namespace) -> None:
     # ------------------------------------------------------------------ 腿位
     # 6 条腿：左侧（Y = +half_w）3 条，右侧（Y = -half_w）3 条。
     # 沿 X 轴均匀分布：前（+half_l）、中（0）、后（-half_l）。
-    # 腿编号：左侧 0/1/2（从前到后），右侧 3/4/5（从前到后）。
+    # 腿编号：从右前开始，按逆时针排序，最后是左前。
     num_legs = 6
-    x_positions = [half_l, 0.0, -half_l]  # 前、中、后
     leg_defs: List[Dict] = []
-    for i, x in enumerate(x_positions):
-        # 左侧：Y 正方向外展
-        leg_defs.append({"leg_id": i,     "x": x,  "side": +1.0})  # side: outward Y sign
-        # 右侧：Y 负方向外展
-        leg_defs.append({"leg_id": i + 3, "x": x,  "side": -1.0})
-
-    # 重新排序使编号连续（可选，此处已连续）
+    ordered_positions = [
+        (half_l, -1.0),   # 右前
+        (0.0, -1.0),      # 右中
+        (-half_l, -1.0),  # 右后
+        (-half_l, 1.0),   # 左后
+        (0.0, 1.0),       # 左中
+        (half_l, 1.0),    # 左前
+    ]
+    for leg_id, (x, side) in enumerate(ordered_positions):
+        leg_defs.append({"leg_id": leg_id, "x": x, "side": side})
 
     for leg_def in leg_defs:
         leg_index = leg_def["leg_id"]

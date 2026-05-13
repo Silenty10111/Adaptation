@@ -59,6 +59,24 @@ def main() -> None:
     print(f"- group_b: {plan['topology']['groups']['group_b']}")
     print(f"- 拓扑屏蔽: {plan['topology']['inhibition_rules']}")
 
+    cpg = plan.get("cpg", {})
+    if cpg:
+        print()
+        print("[Stage 3] CPG network setup")
+        print(f"- active legs: {cpg.get('active_leg_ids', [])}")
+        print(f"- frequency_hz: {cpg.get('frequency_hz')}")
+        print(f"- duty_factor: {cpg.get('duty_factor')}")
+        print(f"- phase_offsets: {cpg.get('phase_offsets', {})}")
+
+    impedance = plan.get("impedance", {})
+    if impedance:
+        print()
+        print("[Stage 4] Impedance defaults")
+        print(f"- space: {impedance.get('space')}")
+        print(f"- stance_kp/kd: {impedance.get('stance_kp')}/{impedance.get('stance_kd')}")
+        print(f"- swing_kp/kd: {impedance.get('swing_kp')}/{impedance.get('swing_kd')}")
+        print(f"- max_deflection: {impedance.get('max_deflection')}")
+
     if args.output:
         args.output.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
         print()

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 import sys
@@ -207,18 +208,39 @@ def compute_adaptive_plan(
         cos_xy += pos * w
     cos_xy /= sum_w
 
-    cov = np.zeros((2, 2), dtype=float)
-    for lid, pos in foot_xy.items():
-        w = weights.get(lid, 0.0)
-        if w <= 0.0:
-            continue
-        diff = pos - cos_xy
-        cov += w * np.outer(diff, diff)
-    cov /= max(sum_w, EPS)
+    # Prefer PCA on trunk polygon (body long axis) over foot positions.
+    # Foot positions spread wide laterally → foot PCA gives lateral axis, not forward.
+    # Trunk polygon better reflects the robot's intended forward direction.
+    trunk_pts_raw = description.get("trunk_polygon_xy", [])
+    pca_pts: Optional[np.ndarray] = None
+    if trunk_pts_raw and len(trunk_pts_raw) >= 2:
+        pca_pts = np.array(trunk_pts_raw, dtype=float)
+    elif len(hip_xy) >= 2:
+        # Hip positions: much less lateral spread, better PCA forward axis
+        pca_pts = np.array(list(hip_xy.values()), dtype=float)
 
-    eigenvals, eigenvecs = np.linalg.eigh(cov)
-    idx_max = int(np.argmax(eigenvals))
-    initial_axis = eigenvecs[:, idx_max].copy()
+    if pca_pts is not None and len(pca_pts) >= 2:
+        pca_center = pca_pts.mean(axis=0)
+        pca_diff = pca_pts - pca_center
+        pca_cov = pca_diff.T @ pca_diff / max(len(pca_pts), 1)
+        eigenvals, eigenvecs = np.linalg.eigh(pca_cov)
+        idx_max = int(np.argmax(eigenvals))
+        initial_axis = eigenvecs[:, idx_max].copy()
+    else:
+        # Fallback: PCA on foot positions, pick the minor axis (less lateral spread)
+        cov = np.zeros((2, 2), dtype=float)
+        for lid, pos in foot_xy.items():
+            w = weights.get(lid, 0.0)
+            if w <= 0.0:
+                continue
+            diff = pos - cos_xy
+            cov += w * np.outer(diff, diff)
+        cov /= max(sum_w, EPS)
+        eigenvals, eigenvecs = np.linalg.eigh(cov)
+        # Use MINOR axis (min eigenvalue) since max variance is lateral for hexapod
+        idx_min = int(np.argmin(eigenvals))
+        initial_axis = eigenvecs[:, idx_min].copy()
+
     initial_axis = _unit(initial_axis)
 
     # ---- COM projection (used for stability / compensation) ------------------
@@ -359,23 +381,97 @@ def compute_adaptive_plan(
     translational_compensation = com_offset / (1.0 + effective_lambda)
 
     # ---- Phase 2: leg grouping -----------------------------------------------
-    # Project foot positions onto final_forward_axis
+    # Sort active legs by polar angle around support centroid (CCW), then alternate.
+    # This produces a diagonal alternating tripod regardless of the forward axis.
     active_legs = [lid for lid in sorted(foot_xy) if lid not in missing_ids and lid not in locked_ids]
-    projections = []
-    for lid in active_legs:
-        proj = float(np.dot(foot_xy[lid], final_axis))
-        lateral = float(np.dot(foot_xy[lid], np.array([-final_axis[1], final_axis[0]], dtype=float)))
-        projections.append((lid, proj, lateral))
 
-    # Sort by longitudinal position, then lateral
-    projections.sort(key=lambda t: (t[1], t[2]))
+    angles = []
+    for lid in active_legs:
+        dp = foot_xy[lid] - cos_xy
+        angles.append((float(np.arctan2(dp[1], dp[0])), lid))
+    angles.sort(key=lambda t: t[0])
+
     group_a: List[int] = []
     group_b: List[int] = []
-    for idx, (lid, _, _) in enumerate(projections):
+    for idx, (_, lid) in enumerate(angles):
         if idx % 2 == 0:
             group_a.append(lid)
         else:
             group_b.append(lid)
+
+    # ---- Per-leg swing projection onto forward axis --------------------------
+    # Compute how much each leg's swing joint contributes to forward motion.
+    # A leg mounted laterally (foot directly to the side) has projection ≈ 1.0.
+    # A leg mounted facing forward/backward has projection ≈ 0.0 (passive).
+    PASSIVE_THRESHOLD = 0.30  # legs with |projection| < threshold go into group_c
+
+    fwd_axis = final_axis
+    lat_axis = np.array([-fwd_axis[1], fwd_axis[0]], dtype=float)
+
+    swing_projections: Dict[int, float] = {}
+    for lid in active_legs:
+        h = hip_xy.get(lid)
+        f = foot_xy.get(lid)
+        if h is not None and f is not None:
+            outward = f - h
+            outward_n = float(np.linalg.norm(outward))
+            if outward_n > EPS:
+                tangent = np.array([-outward[1], outward[0]], dtype=float) / outward_n
+            else:
+                tangent = np.array([0.0, 1.0], dtype=float)
+            # Determine swing direction sign (same logic as build_gait_targets)
+            lat_pos = float(np.dot(f, lat_axis))
+            d_sign = -1.0 if lat_pos > 0.0 else 1.0
+            proj = float(np.dot(d_sign * tangent, fwd_axis))
+        else:
+            proj = 1.0  # no geometry data → assume full contribution
+        swing_projections[lid] = proj
+
+    # Classify active legs into three groups:
+    #   group_a / group_b : alternating active tripods (good forward projection)
+    #   group_c           : passive legs (low forward projection, stay neutral)
+    passive_ids: set = {lid for lid in active_legs
+                        if abs(swing_projections.get(lid, 1.0)) < PASSIVE_THRESHOLD}
+    group_c: List[int] = [lid for lid in active_legs if lid in passive_ids]
+    group_a = [lid for lid in group_a if lid not in passive_ids]
+    group_b = [lid for lid in group_b if lid not in passive_ids]
+
+    # ---- CPG coupling matrix (geometry-aware) --------------------------------
+    cpg_cfg = state.get("cpg", {}) if isinstance(state.get("cpg", {}), dict) else {}
+    freq_hz = float(cpg_cfg.get("frequency_hz", 0.85))
+    duty_factor = float(cpg_cfg.get("duty_factor", 0.60))
+    coupling_gain = float(cpg_cfg.get("coupling_gain", 1.0))
+    long_scale = float(cpg_cfg.get("longitudinal_scale", 0.35))
+    lat_scale = float(cpg_cfg.get("lateral_scale", 0.25))
+    long_scale = max(long_scale, 1e-3)
+    lat_scale = max(lat_scale, 1e-3)
+
+    # fwd_axis / lat_axis already defined above (swing projection section)
+
+    n_legs = len(active_legs)
+    coupling = np.zeros((n_legs, n_legs), dtype=float)
+    phase_bias = np.zeros((n_legs, n_legs), dtype=float)
+
+    group_a_set = set(group_a)
+    group_b_set = set(group_b)
+    for i, lid_i in enumerate(active_legs):
+        for j, lid_j in enumerate(active_legs):
+            if i == j:
+                continue
+            delta = foot_xy[lid_j] - foot_xy[lid_i]
+            d_long = float(np.dot(delta, fwd_axis))
+            d_lat = float(np.dot(delta, lat_axis))
+            w = math.exp(-0.5 * ((d_long / long_scale) ** 2 + (d_lat / lat_scale) ** 2))
+            coupling[i, j] = coupling_gain * w
+            if (lid_i in group_a_set and lid_j in group_b_set) or (lid_i in group_b_set and lid_j in group_a_set):
+                phase_bias[i, j] = float(np.pi)
+
+    leg_phase_offsets: Dict[str, float] = {}
+    for lid in active_legs:
+        if lid in group_b_set:
+            leg_phase_offsets[str(lid)] = float(np.pi)
+        else:
+            leg_phase_offsets[str(lid)] = 0.0
 
     # ---- inhibition rules ----------------------------------------------------
     inhibition_rules: List[Dict] = []
@@ -430,9 +526,29 @@ def compute_adaptive_plan(
         "planned_swings": planned_swings,
         "support_leg_ids": support_ids,
         "near_stance_leg_ids": near_stance_ids,
+        "cpg": {
+            "active_leg_ids": active_legs,
+            "phase_offsets": leg_phase_offsets,
+            "coupling_weights": coupling.tolist(),
+            "coupling_phase_bias": phase_bias.tolist(),
+            "frequency_hz": freq_hz,
+            "omega": float(2.0 * np.pi * freq_hz),
+            "duty_factor": duty_factor,
+            "longitudinal_scale": long_scale,
+            "lateral_scale": lat_scale,
+        },
+        "impedance": {
+            "space": str(state.get("impedance", {}).get("space", "joint")),
+            "stance_kp": float(state.get("impedance", {}).get("stance_kp", 180.0)),
+            "stance_kd": float(state.get("impedance", {}).get("stance_kd", 12.0)),
+            "swing_kp": float(state.get("impedance", {}).get("swing_kp", 80.0)),
+            "swing_kd": float(state.get("impedance", {}).get("swing_kd", 6.0)),
+            "max_deflection": float(state.get("impedance", {}).get("max_deflection", 0.05)),
+        },
         "topology": {
-            "groups": {"group_a": group_a, "group_b": group_b},
+            "groups": {"group_a": group_a, "group_b": group_b, "group_c": group_c},
             "phase_offsets": {"group_a": 0.0, "group_b": float(np.pi)},
+            "swing_projections": {str(lid): swing_projections[lid] for lid in active_legs},
             "inhibition_rules": inhibition_rules,
             "coupling_matrix_zeroed_edges": [],
         },
