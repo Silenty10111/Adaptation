@@ -315,7 +315,14 @@ def compute_adaptive_plan(
 
     pos_score = _score_direction(initial_axis)
     neg_score = _score_direction(-initial_axis)
-    final_axis = initial_axis.copy() if pos_score >= neg_score else -initial_axis.copy()
+
+    # 对称六足机器人可能出现 pos_score == neg_score 的平局（左右镜像消除）。
+    # 加一个微小的 +X 方向先验：当 initial_axis 沿 +X 时给 pos 方向轻微加分，
+    # 确保前进方向始终稳定指向 +X（躯干长轴方向）。
+    _X_PRIOR = 0.04
+    pos_score_adj = pos_score + _X_PRIOR * float(np.dot(initial_axis, [1.0, 0.0]))
+    neg_score_adj = neg_score + _X_PRIOR * float(np.dot(-initial_axis, [1.0, 0.0]))
+    final_axis = initial_axis.copy() if pos_score_adj >= neg_score_adj else -initial_axis.copy()
     final_axis = _unit(final_axis)
 
     drive_resultant = final_axis * max(pos_score, neg_score)

@@ -41,22 +41,48 @@ MESH_DIR_NAME    = "meshes"
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--robot-name", default="standard_hexapod")
-    parser.add_argument("--body-length", type=float, default=0.60,
+
+    # ---- 躯干尺寸 -----------------------------------------------------------
+    parser.add_argument("--body-length", type=float, default=0.55,
                         help="躯干长度（前后方向，X 轴），单位 m。")
     parser.add_argument("--body-width", type=float, default=0.36,
                         help="躯干宽度（左右方向，Y 轴），单位 m。")
-    parser.add_argument("--body-height", type=float, default=0.15,
-                        help="躯干高度（Z 轴），单位 m。")
-    parser.add_argument("--upper-length", type=float, default=0.26,
-                        help="大腿长度，单位 m。")
-    parser.add_argument("--lower-length", type=float, default=0.28,
-                        help="小腿长度，单位 m。")
+    parser.add_argument("--body-height", type=float, default=0.08,
+                        help="躯干高度（Z 轴），仅影响外观，单位 m。蜘蛛形态推荐 0.06~0.10m。")
+    parser.add_argument("--hip-depth", type=float, default=0.04,
+                        help="髋关节安装点相对躯干中心的向下偏移（固定，与 body-height 解耦）。")
+
+    # ---- 腿部尺寸 -----------------------------------------------------------
+    parser.add_argument("--upper-length", type=float, default=0.38,
+                        help="大腿（femur）长度，单位 m。")
+    parser.add_argument("--lower-length", type=float, default=0.38,
+                        help="小腿（tibia）长度，单位 m。")
     parser.add_argument("--joint-radius", type=float, default=0.035,
                         help="关节球体半径，单位 m。")
     parser.add_argument("--link-radius", type=float, default=0.018,
                         help="肢体圆柱半径，单位 m。")
-    parser.add_argument("--density", type=float, default=300.0,
-                        help="均匀密度，单位 kg/m³。")
+
+    # ---- 腿部方向向量权重（蜘蛛化核心参数）------------------------------------
+    # 大腿（femur）方向由三个分量线性混合后归一化：
+    #   upper_dir ∝ upper_x_bias·sign(x)·X̂ + upper_y_weight·Ŷ_out + upper_z_weight·(-Ẑ)
+    # 小腿（tibia）方向：
+    #   lower_dir ∝ lower_x_bias·sign(x)·X̂ + lower_y_weight·Ŷ_out + 1.0·(-Ẑ)
+    # 这些权重不会直接成为角度，而是在归一化前进行混合（类似 slerp 的线性近似）
+    parser.add_argument("--upper-x-bias", type=float, default=0.55,
+                        help="大腿 X 轴（前/后）偏置权重。前腿取正、后腿取负；"
+                             "越大则前后腿越偏向前后方，X足迹跨度越大。[0.0, 1.0+]")
+    parser.add_argument("--upper-y-weight", type=float, default=0.60,
+                        help="大腿侧向（Y 轴）展开权重。越大则腿越水平展开。[0.3, 1.0+]")
+    parser.add_argument("--upper-z-weight", type=float, default=0.08,
+                        help="大腿向下（-Z）倾斜权重。0=水平，>0=略微下倾（降低膝关节高度）。[0.0, 0.4]")
+    parser.add_argument("--lower-x-bias", type=float, default=0.30,
+                        help="小腿 X 轴偏置权重（延续大腿的前后方向，让足端更靠前/后）。[0.0, 0.6]")
+    parser.add_argument("--lower-y-weight", type=float, default=0.08,
+                        help="小腿侧向（Y）权重。控制足端相对膝关节的横向偏移量。[0.0, 0.3]")
+
+    # ---- 物理密度 -----------------------------------------------------------
+    parser.add_argument("--density", type=float, default=900.0,
+                        help="均匀密度，单位 kg/m³。扁平躯干需提高密度以维持 I_roll ≥ 0.12 kg·m²。")
     return parser.parse_args()
 
 
@@ -206,8 +232,13 @@ def write_urdf(metadata: Dict, urdf_path: Path, desc_path: Path) -> None:
 # 标准六足几何体生成
 # ---------------------------------------------------------------------------
 
-def generate(args: argparse.Namespace) -> None:
-    """生成几何体、JSON 描述及 URDF，全部输出到 standard_hexapod/ 子目录。"""
+def generate(args: argparse.Namespace) -> Dict:
+    """生成几何体、JSON 描述及 URDF，全部输出到 standard_hexapod/ 子目录。
+
+    Returns
+    -------
+    dict  包含 metadata 及几何评估指标（x_span, y_span, xy_ratio, i_roll, total_mass）。
+    """
 
     # 输出路径
     assets_root = REPO_ROOT / ASSET_DIR_NAME / STANDARD_SUBDIR
@@ -216,7 +247,7 @@ def generate(args: argparse.Namespace) -> None:
 
     BL   = args.body_length    # 躯干长（X）
     BW   = args.body_width     # 躯干宽（Y）
-    BH   = args.body_height    # 躯干高（Z）
+    BH   = args.body_height    # 躯干高（Z，仅影响外观）
     UL   = args.upper_length
     LL   = args.lower_length
     JR   = args.joint_radius
@@ -225,7 +256,8 @@ def generate(args: argparse.Namespace) -> None:
 
     half_l = BL / 2.0
     half_w = BW / 2.0
-    hip_z  = -BH / 2.0        # 髋关节 Z（躯干底面）
+    # hip_z 固定为 -hip_depth，与 body_height 解耦，保证腿部运动学不随躯干薄厚改变
+    hip_z  = -args.hip_depth   # 默认 -0.075m（旧设计值），不随 BH 变动
 
     # ------------------------------------------------------------------ 躯干
     # 长方体：以 XY 中心为原点，底面在 -BH/2，顶面在 +BH/2
@@ -268,11 +300,27 @@ def generate(args: argparse.Namespace) -> None:
         # 髋关节安装点（躯干侧面中点高度）
         attach = np.array([x_pos, side * half_w, hip_z], dtype=float)
 
-        # 腿展方向（向外 Y 方向斜下）
-        outward_y   = np.array([0.0, side, 0.0], dtype=float)
-        down        = np.array([0.0, 0.0, -1.0], dtype=float)
-        upper_dir   = normalize(0.85 * outward_y + 0.30 * down)
-        lower_dir   = normalize(0.20 * outward_y + 1.00 * down)
+        # ---- 腿部方向向量（参数化设计）-----------------------------------------
+        # 使用 CLI 参数控制各分量权重，权重意义见 parse_args 注释。
+        outward_y = np.array([0.0, side, 0.0], dtype=float)
+        down      = np.array([0.0, 0.0, -1.0], dtype=float)
+        forward   = np.array([1.0, 0.0, 0.0], dtype=float)
+
+        # 前腿 (x_sign=+1) 偏前，后腿 (x_sign=-1) 偏后，中腿 (x_sign=0) 纯侧向
+        x_sign = float(np.sign(x_pos))
+
+        # 大腿方向：X 前后偏置 + Y 侧向展开 + Z 轻微下倾（均由参数控制）
+        upper_dir = normalize(
+            x_sign * args.upper_x_bias  * forward
+            + args.upper_y_weight * outward_y
+            + args.upper_z_weight * down
+        )
+        # 小腿方向：主要向下（权重固定=1.0）+ 参数化的 X/Y 分量
+        lower_dir = normalize(
+            x_sign * args.lower_x_bias  * forward
+            + args.lower_y_weight * outward_y
+            + 1.00 * down
+        )
 
         upper_vec   = upper_dir * UL
         lower_vec   = lower_dir * LL
@@ -408,10 +456,63 @@ def generate(args: argparse.Namespace) -> None:
     total_mass = sum(lk["mass_properties"]["mass"] for lk in links)
     print(f"  总质量   : {total_mass:.3f} kg")
 
+    # ---- 几何评估指标（供寻优脚本读取）---------------------------------------
+    metrics: Dict = {"total_mass": float(total_mass)}
+    foot_links = [lk for lk in links if lk["role"] == "foot"]
+    if foot_links:
+        fxs = [lk["default_world_origin"][0] for lk in foot_links]
+        fys = [lk["default_world_origin"][1] for lk in foot_links]
+        fzs = [lk["default_world_origin"][2] for lk in foot_links]
+        x_span = max(fxs) - min(fxs)
+        y_span = max(fys) - min(fys)
+        xy_ratio = x_span / max(y_span, 1e-9)
+        avg_foot_z = float(np.mean(fzs))
+        metrics.update({
+            "x_span": float(x_span),
+            "y_span": float(y_span),
+            "xy_ratio": float(xy_ratio),
+            "avg_foot_z": float(avg_foot_z),
+        })
+        print(f"  足端X跨度: {x_span:.3f} m")
+        print(f"  足端Y跨度: {y_span:.3f} m")
+        print(f"  X/Y比值  : {xy_ratio:.3f}  ({'≥ 1.0 ✓' if xy_ratio >= 1.0 else '< 1.0 ✗  请加大 upper-x-bias 或缩小 body-width'})")
+    trunk_link = next((lk for lk in links if lk["role"] == "trunk"), None)
+    if trunk_link:
+        I = trunk_link["mass_properties"]["inertia"]
+        i_roll = float(I[0][0])
+        metrics["i_roll"] = i_roll
+        print(f"  I_roll   : {i_roll:.4f} kg·m²  ({'≥ 0.12 ✓' if i_roll >= 0.12 else '< 0.12 ✗ 请增大 density 或 body_width'})")
+
+    metrics["metadata"] = metadata
+    return metrics
+
 
 # ---------------------------------------------------------------------------
 # 入口
 # ---------------------------------------------------------------------------
+
+def generate_from_dict(params: Dict) -> Dict:
+    """程序化接口：传入参数字典（key 对应 CLI 长参数名去掉 '--' 并将 '-' 换成 '_'）。
+
+    适合被 search_morphology.py 批量调用，不依赖 sys.argv。
+    缺失参数自动使用默认值。
+    """
+    import types
+    defaults = parse_args.__defaults__  # noqa: not used, just for documentation
+    # Build a Namespace by parsing an empty list (gets all defaults) then overwrite
+    dummy_argv = []
+    for key, val in params.items():
+        cli_key = "--" + key.replace("_", "-")
+        dummy_argv.extend([cli_key, str(val)])
+    import sys as _sys
+    _old = _sys.argv
+    _sys.argv = ["generate_standardurdf.py"] + dummy_argv
+    try:
+        ns = parse_args()
+    finally:
+        _sys.argv = _old
+    return generate(ns)
+
 
 def main() -> None:
     generate(parse_args())

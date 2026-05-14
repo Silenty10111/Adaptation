@@ -207,6 +207,15 @@ def get_body_xy(gym, env, actor, gymapi) -> List[float]:
     return [float(p["x"]), float(p["y"])]
 
 
+def get_body_pose(gym, env, actor, gymapi):
+    """Return (x, y, z) position of root body."""
+    states = gym.get_actor_rigid_body_states(env, actor, gymapi.STATE_POS)
+    if states is None or len(states) == 0:
+        return (0.0, 0.0, 0.0)
+    p = states["pose"]["p"][0]
+    return (float(p["x"]), float(p["y"]), float(p["z"]))
+
+
 def get_body_attitude(gym, env, actor, gymapi) -> tuple:
     """Return (roll, pitch, yaw) of the actor's root body in radians."""
     states = gym.get_actor_rigid_body_states(env, actor, gymapi.STATE_POS)
@@ -461,9 +470,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--gait-frequency", type=float, default=0.85)
     p.add_argument("--swing-ratio-amplitude", type=float, default=0.26)
     p.add_argument("--swing-lift-ratio", type=float, default=0.78)
-    p.add_argument("--stance-lift-ratio", type=float, default=0.05)
+    p.add_argument("--stance-lift-ratio", type=float, default=0.46)
     p.add_argument("--swing-drop-ratio", type=float, default=0.38)
-    p.add_argument("--stance-drop-ratio", type=float, default=0.90)
+    p.add_argument("--stance-drop-ratio", type=float, default=0.08)
+    p.add_argument("--metrics-out", type=Path, default=None,
+                   help="如果指定，将一个 JSON 指标文件写出到此路径（供 search_morphology.py 读取）。")
     return p.parse_args()
 
 
@@ -630,13 +641,20 @@ def main() -> int:
                   f"drop_idx={triplet['drop_idx']:2d} ({dof_names[triplet['drop_idx']]})")
 
         # ---- Build standing posture targets (legs angled down to ground) ----
+        # 对新的扁平蜘蛛几何：大腿方向近水平（upper_z_weight=0.08），
+        # 关节 0 rad 时足端已在设计位置（z≈-0.44m）。
+        # lift_ratio=0.46 → lift≈0 rad（维持大腿设计角度）
+        # drop_ratio=0.08 → drop≈-0.10 rad（小腿自然下伸角）
+        # 旧参数 lift=0.05/drop=0.995 对应 -0.71/0.99 rad，会把腿折叠到空中导致倒地。
+        STAND_LIFT_RATIO = args.stance_lift_ratio   # 使用 CLI 参数
+        STAND_DROP_RATIO = args.stance_drop_ratio
         stand_targets = default_targets.copy()
         for leg_id, joints in triplets.items():
             stand_targets[joints["lift_idx"]] = ratio_to_joint(
-                joints["lift_lower"], joints["lift_upper"], 0.05,
+                joints["lift_lower"], joints["lift_upper"], STAND_LIFT_RATIO,
             )
             stand_targets[joints["drop_idx"]] = ratio_to_joint(
-                joints["drop_lower"], joints["drop_upper"], 0.995,
+                joints["drop_lower"], joints["drop_upper"], STAND_DROP_RATIO,
             )
             stand_targets[joints["swing_idx"]] = ratio_to_joint(
                 joints["swing_lower"], joints["swing_upper"], 0.50,
@@ -698,6 +716,10 @@ def main() -> int:
         
         # 轨迹记录用于诊断前进方向和侧向漂移
         motion_trail: List[List[float]] = []
+        # “平滑度”采样列表（忽略预热阶段）
+        roll_samples: List[float] = []
+        pitch_samples: List[float] = []
+        com_z_samples: List[float] = []
         sim_time = 0.0
         dt = sim_params.dt
 
@@ -869,6 +891,13 @@ def main() -> int:
                 roll, pitch, _ = get_body_attitude(gym, env, actor, gymapi)
                 motion_trail.append(body_xy)
 
+                # 平滑度采样：跳过前 1/4 预热步骤
+                if step >= args.steps // 4:
+                    _, _, bz = get_body_pose(gym, env, actor, gymapi)
+                    roll_samples.append(roll)
+                    pitch_samples.append(pitch)
+                    com_z_samples.append(bz)
+
                 if (step + 1) % 400 == 0:
                     print(f"[{step + 1:5d}/{args.steps}] "
                           f"body_xy = [{body_xy[0]:.4f}, {body_xy[1]:.4f}]  "
@@ -876,7 +905,6 @@ def main() -> int:
                           f"pitch = {math.degrees(pitch):.1f}°")
 
                 sim_time += dt
-
             # Headless summary
             trail = np.array(motion_trail, dtype=float)
             if len(trail) > 1:
@@ -898,6 +926,51 @@ def main() -> int:
                 print(f"  前进距离: {fwd_dist:+.4f} m")
                 print(f"  侧向漂移: {lat_dist:+.4f} m")
                 print(f"  {'✓ 方向控制良好' if abs(heading_error) < 5.0 else '✗ 方向偏差过大'}")
+
+        # ---- 指标计算与写出 ---------------------------------------------------
+        if roll_samples:
+            roll_arr  = np.array(roll_samples, dtype=float)
+            pitch_arr = np.array(pitch_samples, dtype=float)
+            z_arr     = np.array(com_z_samples, dtype=float)
+            roll_rmse  = float(np.sqrt(np.mean(roll_arr ** 2)))
+            pitch_rmse = float(np.sqrt(np.mean(pitch_arr ** 2)))
+            com_z_var  = float(np.var(z_arr))
+            com_z_mean = float(np.mean(z_arr))
+            print(f"\n[指标]躯干平滑度统计（后 {len(roll_samples)} 帧）")
+            print(f"  roll_rmse  = {math.degrees(roll_rmse):.3f}°")
+            print(f"  pitch_rmse = {math.degrees(pitch_rmse):.3f}°")
+            print(f"  com_z_var  = {com_z_var:.6f} m²")
+            print(f"  com_z_mean = {com_z_mean:.4f} m")
+        else:
+            roll_rmse = pitch_rmse = com_z_var = com_z_mean = 0.0
+
+        if args.metrics_out is not None:
+            # 轨迹结果（如果有）
+            trail = np.array(motion_trail, dtype=float)
+            fwd_dist = lat_dist = heading_error = 0.0
+            if len(trail) > 1:
+                disp = trail[-1] - trail[0]
+                fwd = np.asarray(forward_axis, dtype=float)
+                fwd = fwd / max(float(np.linalg.norm(fwd)), 1e-9)
+                fwd_dist = float(np.dot(disp, fwd))
+                lat_dist = float(np.dot(disp, np.array([-fwd[1], fwd[0]], dtype=float)))
+                heading_error = math.degrees(math.atan2(disp[1], disp[0])
+                                             - math.atan2(fwd[1], fwd[0]))
+            metrics_data = {
+                "roll_rmse_rad":  roll_rmse,
+                "pitch_rmse_rad": pitch_rmse,
+                "com_z_var":      com_z_var,
+                "com_z_mean":     com_z_mean,
+                "fwd_distance":   fwd_dist,
+                "lat_drift":      lat_dist,
+                "heading_error_deg": heading_error,
+                "steps":          args.steps,
+            }
+            import json as _json
+            Path(args.metrics_out).write_text(
+                _json.dumps(metrics_data, indent=2), encoding="utf-8"
+            )
+            print(f"[指标] 已写出: {args.metrics_out}")
 
         print("[OK] Simulation finished.")
         return 0
