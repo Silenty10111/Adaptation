@@ -388,23 +388,57 @@ def compute_adaptive_plan(
     translational_compensation = com_offset / (1.0 + effective_lambda)
 
     # ---- Phase 2: leg grouping -----------------------------------------------
-    # Sort active legs by polar angle around support centroid (CCW), then alternate.
-    # This produces a diagonal alternating tripod regardless of the forward axis.
+    # For standard hexapods with symmetric left/right configuration:
+    # Group legs diagonally (right-front + left-mid + right-rear vs left-front + right-mid + left-rear)
+    # This ensures symmetric and stable tripod gait.
+    #
+    # For other configurations, sort by polar angle and alternate.
     active_legs = [lid for lid in sorted(foot_xy) if lid not in missing_ids and lid not in locked_ids]
-
-    angles = []
-    for lid in active_legs:
-        dp = foot_xy[lid] - cos_xy
-        angles.append((float(np.arctan2(dp[1], dp[0])), lid))
-    angles.sort(key=lambda t: t[0])
 
     group_a: List[int] = []
     group_b: List[int] = []
-    for idx, (_, lid) in enumerate(angles):
-        if idx % 2 == 0:
-            group_a.append(lid)
+
+    # Detect standard hexapod: exactly 6 legs, symmetric Y positions (3 left, 3 right)
+    if len(active_legs) == 6:
+        # Compute Y-coordinate statistics to detect left/right symmetry
+        y_coords = [float(foot_xy[lid][1]) for lid in active_legs]
+        y_mean = float(np.mean(y_coords))
+        y_left = [lid for lid in active_legs if float(foot_xy[lid][1]) > y_mean]
+        y_right = [lid for lid in active_legs if float(foot_xy[lid][1]) <= y_mean]
+        
+        # If we have 3 legs on each side, apply diagonal tripod grouping
+        if len(y_left) == 3 and len(y_right) == 3:
+            # Sort each side by X coordinate (front → mid → rear)
+            y_left.sort(key=lambda lid: float(foot_xy[lid][0]), reverse=True)  # [front, mid, rear]
+            y_right.sort(key=lambda lid: float(foot_xy[lid][0]), reverse=True)  # [front, mid, rear]
+            # Diagonal tripod: front-right + mid-left + rear-right vs front-left + mid-right + rear-left
+            group_a = [y_right[0], y_left[1], y_right[2]]  # [right-front, left-mid, right-rear]
+            group_b = [y_left[0], y_right[1], y_left[2]]   # [left-front, right-mid, left-rear]
+            print(f"[Grouping] 标准六足对角三脚架: group_a={group_a}  group_b={group_b}")
         else:
-            group_b.append(lid)
+            # Fallback to polar angle alternation
+            angles = []
+            for lid in active_legs:
+                dp = foot_xy[lid] - cos_xy
+                angles.append((float(np.arctan2(dp[1], dp[0])), lid))
+            angles.sort(key=lambda t: t[0])
+            for idx, (_, lid) in enumerate(angles):
+                if idx % 2 == 0:
+                    group_a.append(lid)
+                else:
+                    group_b.append(lid)
+    else:
+        # For non-standard configurations, sort by polar angle and alternate
+        angles = []
+        for lid in active_legs:
+            dp = foot_xy[lid] - cos_xy
+            angles.append((float(np.arctan2(dp[1], dp[0])), lid))
+        angles.sort(key=lambda t: t[0])
+        for idx, (_, lid) in enumerate(angles):
+            if idx % 2 == 0:
+                group_a.append(lid)
+            else:
+                group_b.append(lid)
 
     # ---- Per-leg swing projection onto forward axis --------------------------
     # Compute how much each leg's swing joint contributes to forward motion.

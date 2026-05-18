@@ -131,6 +131,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stance-lift-ratio", type=float, default=0.05, help="Lift joint ratio during stance phase.")
     parser.add_argument("--swing-drop-ratio", type=float, default=0.38, help="Drop joint ratio during swing phase.")
     parser.add_argument("--stance-drop-ratio", type=float, default=0.90, help="Drop joint ratio during stance phase.")
+    parser.add_argument("--use-mpc", action="store_true", help="Use SRB-MPC to apply foot forces.")
+    parser.add_argument("--mpc-with-gait", action="store_true", help="Keep gait joint targets while applying MPC forces.")
+    parser.add_argument("--mpc-horizon", type=int, default=10, help="SRB-MPC horizon (DARE approximation).")
+    parser.add_argument("--mpc-mu", type=float, default=0.6, help="Friction coefficient for MPC force clipping.")
+    parser.add_argument("--mpc-fmin", type=float, default=10.0, help="Minimum normal force per foot (N).")
+    parser.add_argument("--mpc-fmax", type=float, default=500.0, help="Maximum normal force per foot (N).")
     return parser.parse_args()
 
 
@@ -223,6 +229,86 @@ def clamp_ratio(value: float) -> float:
 def ratio_to_joint(lower: float, upper: float, ratio: float) -> float:
     bounded = clamp_ratio(ratio)
     return float(lower + bounded * (upper - lower))
+
+
+def quat_to_euler(w: float, x: float, y: float, z: float) -> tuple[float, float, float]:
+    """Convert quaternion (w,x,y,z) to roll, pitch, yaw in radians."""
+    sinr = 2.0 * (w * x + y * z)
+    cosr = 1.0 - 2.0 * (x * x + y * y)
+    roll = math.atan2(sinr, cosr)
+    sinp = 2.0 * (w * y - z * x)
+    pitch = math.asin(max(-1.0, min(1.0, sinp)))
+    siny = 2.0 * (w * z + x * y)
+    cosy = 1.0 - 2.0 * (y * y + z * z)
+    yaw = math.atan2(siny, cosy)
+    return roll, pitch, yaw
+
+
+def parse_leg_id_from_foot(name: str) -> int | None:
+    if not name.startswith("leg_") or "_foot" not in name:
+        return None
+    parts = name.split("_")
+    if len(parts) < 3:
+        return None
+    try:
+        return int(parts[1])
+    except ValueError:
+        return None
+
+
+def resolve_foot_bodies(gym, env, actor) -> Dict[int, int]:
+    """Return mapping: leg_id -> rigid body index for foot links."""
+    body_names = gym.get_actor_rigid_body_names(env, actor)
+    mapping: Dict[int, int] = {}
+    for idx, name in enumerate(body_names):
+        leg_id = parse_leg_id_from_foot(str(name))
+        if leg_id is None:
+            continue
+        mapping[leg_id] = idx
+    return mapping
+
+
+def build_mpc_state(
+    gym,
+    env,
+    actor,
+    gymapi,
+    base_body_index: int,
+    num_legs: int,
+    foot_body_map: Dict[int, int],
+    default_feet: Dict[int, np.ndarray],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Build SRB state vector and foot positions array from Isaac Gym states."""
+    states = gym.get_actor_rigid_body_states(env, actor, gymapi.STATE_ALL)
+    if states is None or len(states) == 0:
+        x_cur = np.zeros(13)
+        foot_positions = np.zeros((num_legs, 3))
+        return x_cur, foot_positions
+
+    p_root = states["pose"]["p"][base_body_index]
+    r_root = states["pose"]["r"][base_body_index]
+    v_root = states["vel"]["linear"][base_body_index]
+    w_root = states["vel"]["angular"][base_body_index]
+
+    roll, pitch, yaw = quat_to_euler(float(r_root["w"]), float(r_root["x"]), float(r_root["y"]), float(r_root["z"]))
+
+    x_cur = np.zeros(13)
+    x_cur[0:3] = [roll, pitch, yaw]
+    x_cur[3:6] = [float(p_root["x"]), float(p_root["y"]), float(p_root["z"])]
+    x_cur[6:9] = [float(w_root["x"]), float(w_root["y"]), float(w_root["z"])]
+    x_cur[9:12] = [float(v_root["x"]), float(v_root["y"]), float(v_root["z"])]
+    x_cur[12] = -9.81
+
+    foot_positions = np.zeros((num_legs, 3))
+    for leg_id in range(num_legs):
+        body_index = foot_body_map.get(leg_id)
+        if body_index is None:
+            foot_positions[leg_id] = default_feet.get(leg_id, np.zeros(3))
+            continue
+        p = states["pose"]["p"][body_index]
+        foot_positions[leg_id] = [float(p["x"]), float(p["y"]), float(p["z"])]
+
+    return x_cur, foot_positions
 
 
 def foot_xy_map(description: Dict[str, object]) -> Dict[int, np.ndarray]:
@@ -572,6 +658,63 @@ def main() -> None:
         joint_triplets = resolve_joint_triplets(gym, env, actor, description)
         missing_joints = []
 
+        mpc = None
+        cpg = None
+        foot_body_map: Dict[int, int] = {}
+        base_body_index = 0
+        mpc_physics = None
+        mpc_weights = None
+        mpc_x_ref = None
+
+        if args.use_mpc:
+            try:
+                from mpc_bridge import AdaptiveMPCWeights, RobotPhysicsParser
+                from srb_mpc_demo import CPGScheduler, SRBMPCController
+            except ImportError as exc:
+                raise RuntimeError(
+                    "启用 --use-mpc 需要 mpc_bridge.py 和 srb_mpc_demo.py 以及 scipy。"
+                ) from exc
+
+            mpc_physics = RobotPhysicsParser.from_json(str(args.description))
+            mpc_weights = AdaptiveMPCWeights(mpc_physics).compute()
+            mpc = SRBMPCController(
+                mpc_physics,
+                mpc_weights,
+                dt=sim_params.dt,
+                horizon=args.mpc_horizon,
+                mu_friction=args.mpc_mu,
+                f_min=args.mpc_fmin,
+                f_max=args.mpc_fmax,
+            )
+
+            cpg_cfg = gait_plan.get("cpg", {}) if isinstance(gait_plan.get("cpg", {}), dict) else {}
+            phase_offsets = cpg_cfg.get("phase_offsets", {})
+            if not phase_offsets:
+                group_a = list(gait_plan.get("topology", {}).get("groups", {}).get("group_a", []))
+                group_b = list(gait_plan.get("topology", {}).get("groups", {}).get("group_b", []))
+                phase_offsets = {str(lid): 0.0 for lid in group_a}
+                phase_offsets.update({str(lid): float(np.pi) for lid in group_b})
+
+            freq_hz = float(cpg_cfg.get("frequency_hz", args.gait_frequency))
+            duty_factor = float(cpg_cfg.get("duty_factor", 0.60))
+            leg_ids = sorted(mpc_physics.foot_positions.keys())
+            cpg = CPGScheduler(
+                leg_ids,
+                {int(k): float(v) for k, v in phase_offsets.items()},
+                freq_hz,
+                duty_factor,
+                dt=sim_params.dt,
+            )
+
+            foot_body_map = resolve_foot_bodies(gym, env, actor)
+            body_names = gym.get_actor_rigid_body_names(env, actor)
+            for idx, name in enumerate(body_names):
+                if str(name) == "base_link":
+                    base_body_index = idx
+                    break
+
+            mpc_x_ref = SRBMPCController.make_reference(pz=float(args.body_height))
+
         print("Adaptive gait plan summary:")
         print(json.dumps(gait_plan, indent=2, ensure_ascii=False))
         print_diagnostics(diagnostics)
@@ -592,8 +735,34 @@ def main() -> None:
             forward_axis = list(gait_plan.get("final_forward_axis", [1.0, 0.0]))
             sim_time = 0.0
             while not gym.query_viewer_has_closed(viewer):
-                dof_targets = build_cyclic_dof_targets(description, gait_plan, joint_triplets, dof_targets, sim_time, args)
-                gym.set_actor_dof_position_targets(env, actor, dof_targets)
+                if args.use_mpc and mpc is not None and cpg is not None and mpc_physics is not None:
+                    if args.mpc_with_gait:
+                        dof_targets = build_cyclic_dof_targets(description, gait_plan, joint_triplets, dof_targets, sim_time, args)
+                    gym.set_actor_dof_position_targets(env, actor, dof_targets)
+
+                    x_cur, foot_positions = build_mpc_state(
+                        gym,
+                        env,
+                        actor,
+                        gymapi,
+                        base_body_index,
+                        int(mpc_physics.num_legs),
+                        foot_body_map,
+                        mpc_physics.foot_positions,
+                    )
+                    phase_states = cpg.step()
+                    contact_ids = [lid for lid, s in phase_states.items() if s == "stance" and lid in foot_body_map]
+                    u = mpc.compute(x_cur, mpc_x_ref, contact_ids, foot_positions)
+
+                    for i, leg_id in enumerate(contact_ids):
+                        body_index = foot_body_map[leg_id]
+                        force = gymapi.Vec3(float(u[i * 3]), float(u[i * 3 + 1]), float(u[i * 3 + 2]))
+                        pos = foot_positions[leg_id]
+                        pos_vec = gymapi.Vec3(float(pos[0]), float(pos[1]), float(pos[2]))
+                        gym.apply_rigid_body_force_at_pos(env, actor, body_index, force, pos_vec, gymapi.ENV_SPACE)
+                else:
+                    dof_targets = build_cyclic_dof_targets(description, gait_plan, joint_triplets, dof_targets, sim_time, args)
+                    gym.set_actor_dof_position_targets(env, actor, dof_targets)
                 gym.simulate(sim)
                 gym.fetch_results(sim, True)
                 gym.step_graphics(sim)
@@ -606,8 +775,34 @@ def main() -> None:
         else:
             sim_time = 0.0
             for _ in range(max(args.steps, 1)):
-                dof_targets = build_cyclic_dof_targets(description, gait_plan, joint_triplets, dof_targets, sim_time, args)
-                gym.set_actor_dof_position_targets(env, actor, dof_targets)
+                if args.use_mpc and mpc is not None and cpg is not None and mpc_physics is not None:
+                    if args.mpc_with_gait:
+                        dof_targets = build_cyclic_dof_targets(description, gait_plan, joint_triplets, dof_targets, sim_time, args)
+                    gym.set_actor_dof_position_targets(env, actor, dof_targets)
+
+                    x_cur, foot_positions = build_mpc_state(
+                        gym,
+                        env,
+                        actor,
+                        gymapi,
+                        base_body_index,
+                        int(mpc_physics.num_legs),
+                        foot_body_map,
+                        mpc_physics.foot_positions,
+                    )
+                    phase_states = cpg.step()
+                    contact_ids = [lid for lid, s in phase_states.items() if s == "stance" and lid in foot_body_map]
+                    u = mpc.compute(x_cur, mpc_x_ref, contact_ids, foot_positions)
+
+                    for i, leg_id in enumerate(contact_ids):
+                        body_index = foot_body_map[leg_id]
+                        force = gymapi.Vec3(float(u[i * 3]), float(u[i * 3 + 1]), float(u[i * 3 + 2]))
+                        pos = foot_positions[leg_id]
+                        pos_vec = gymapi.Vec3(float(pos[0]), float(pos[1]), float(pos[2]))
+                        gym.apply_rigid_body_force_at_pos(env, actor, body_index, force, pos_vec, gymapi.ENV_SPACE)
+                else:
+                    dof_targets = build_cyclic_dof_targets(description, gait_plan, joint_triplets, dof_targets, sim_time, args)
+                    gym.set_actor_dof_position_targets(env, actor, dof_targets)
                 gym.simulate(sim)
                 gym.fetch_results(sim, True)
                 sim_time += sim_params.dt

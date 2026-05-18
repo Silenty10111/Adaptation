@@ -372,6 +372,9 @@ def build_gait_targets(
 
     for leg_id, joints in triplets.items():
         foot_xy_vec = fmap.get(leg_id, np.zeros(2, dtype=float))
+        # Use lateral position (perpendicular to forward) to decide swing rotation sense.
+        # +lateral (left side): negative Z-rotation swings foot forward → dir_sign = -1
+        # -lateral (right side): positive Z-rotation swings foot forward → dir_sign = +1
         lateral_pos = float(np.dot(foot_xy_vec, lateral_axis))
         dir_sign = -1.0 if lateral_pos > 0.0 else 1.0
 
@@ -774,7 +777,7 @@ def main() -> int:
                     
                     # 计算质心到每条支撑多边形边的有符号距离
                     n = len(p_arr)
-                    min_dist = float('inf')
+                    distances = []
                     for i in range(n):
                         a = p_arr[i]
                         b = p_arr[(i + 1) % n]
@@ -783,9 +786,14 @@ def main() -> int:
                         if edge_len > 1e-9:
                             signed_dist = (edge[0] * (com_xy_world[1] - a[1]) - 
                                           edge[1] * (com_xy_world[0] - a[0])) / edge_len
-                            min_dist = min(min_dist, signed_dist)
+                            distances.append(signed_dist)
                     
-                    ssm_value = min_dist if np.isfinite(min_dist) else 0.0
+                    if distances:
+                        # 兼容多边形顶点顺逆时针：内部对应所有边距离应同号
+                        is_inside = all(d <= 1e-5 for d in distances) or all(d >= -1e-5 for d in distances)
+                        ssm_value = min(abs(d) for d in distances) if is_inside else -min(abs(d) for d in distances)
+                    else:
+                        ssm_value = 0.0
                 else:
                     ssm_value = 0.0
 

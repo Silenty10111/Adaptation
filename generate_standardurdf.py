@@ -328,7 +328,7 @@ def generate(args: argparse.Namespace) -> Dict:
         foot_world  = knee_world + lower_vec
 
         # 旋转轴：lift（抬腿）绕 X 轴；swing（前后摆）绕 Z 轴
-        lift_axis   = np.array([1.0, 0.0, 0.0], dtype=float)
+        lift_axis   = np.array([side, 0.0, 0.0], dtype=float)
         swing_axis  = np.array([0.0, 0.0, 1.0], dtype=float)
 
         # 命名
