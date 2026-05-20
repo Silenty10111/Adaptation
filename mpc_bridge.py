@@ -17,6 +17,7 @@ mpc_bridge.py  —  动态物理参数解析与 SRB-MPC 桥接模块
 from __future__ import annotations
 
 import json
+import math
 import os
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -338,6 +339,9 @@ class AdaptiveMPCWeights:
 
     _R_BASE_PER_LEG = np.array([1e-4, 1e-4, 1e-4])  # Fx, Fy, Fz 每腿基准
 
+    # 非对角惯量耦合门槛：|I_ij| / sqrt(I_ii*I_jj) 超过此值才引入交叉惩罚项
+    _INERTIA_COUPLING_THRESHOLD = 0.05
+
     def __init__(
         self,
         physics: RobotPhysics,
@@ -354,17 +358,23 @@ class AdaptiveMPCWeights:
 
     # ── 内部启发式函数 ────────────────────────────────────────────────────────
 
-    def _roll_pitch_scale(self) -> float:
+    def _roll_pitch_scale(self) -> Tuple[float, float]:
         """
-        返回 Roll/Pitch 权重的缩放因子。
-        aspect_ratio = span/height；基准 ≈ 1.5。
-        越宽扁 -> 因子 < 1（降低权重）；越细高 -> 因子 > 1（提高权重）。
+        分别返回 Roll 和 Pitch 的权重缩放因子，基于 2D 足端轮廓包围盒。
+        纵向跨度（X）小 → Pitch 方向更不稳 → Pitch 权重升高
+        横向跨度（Y）小 → Roll 方向更不稳  → Roll 权重升高
         """
-        ar = self.physics.aspect_ratio
-        base_ar = 1.5
-        # 用反比例关系，限制在 [0.2, 5.0]
-        scale = np.clip((base_ar / ar) ** 1.5, 0.2, 5.0)
-        return float(scale)
+        foot_arr = self.physics.foot_positions_array  # (n, 3)
+        if len(foot_arr) < 2:
+            return 1.0, 1.0
+        x_span = float(foot_arr[:, 0].max() - foot_arr[:, 0].min())
+        y_span = float(foot_arr[:, 1].max() - foot_arr[:, 1].min())
+        base_span = 0.6  # 基准跨度（m），约标准六足半跨
+        x_span = max(x_span, 1e-3)
+        y_span = max(y_span, 1e-3)
+        pitch_scale = float(np.clip((base_span / x_span) ** 1.2, 0.2, 5.0))
+        roll_scale  = float(np.clip((base_span / y_span) ** 1.2, 0.2, 5.0))
+        return roll_scale, pitch_scale
 
     def _height_weight_scale(self) -> float:
         """
@@ -385,17 +395,40 @@ class AdaptiveMPCWeights:
         leg_scale = np.clip(base_legs / self.physics.num_legs, 0.5, 2.0)
         return float(mass_scale * leg_scale)
 
+    def _inertia_off_diagonal_coupling(self, q_diag: np.ndarray, Q: np.ndarray) -> None:
+        """
+        将完整 3×3 惯量张量的非对角元素映射为 Q 矩阵中的交叉惩罚项（in-place）。
+        轴序 Ixx→roll(0), Iyy→pitch(1), Izz→yaw(2)。
+        若相对耦合强度 |I_ij|/sqrt(I_ii*I_jj) > threshold，
+        则在 Q[i,j] 注入正比于两轴权重几何均值的交叉项，
+        使 MPC 能预见并抑制因质心偏置引起的横摇-俯仰耦合。
+        """
+        I = self.physics.inertia_tensor  # (3,3)
+        thresh = self._INERTIA_COUPLING_THRESHOLD
+        for ai in range(3):
+            for aj in range(ai + 1, 3):
+                I_ii = float(I[ai, ai])
+                I_jj = float(I[aj, aj])
+                I_ij = float(I[ai, aj])
+                denom = math.sqrt(max(I_ii * I_jj, 1e-20))
+                coupling_ratio = abs(I_ij) / denom
+                if coupling_ratio > thresh:
+                    cross = coupling_ratio * math.sqrt(q_diag[ai] * q_diag[aj]) * 0.5
+                    Q[ai, aj] = cross
+                    Q[aj, ai] = cross
+
     # ── 公开接口 ──────────────────────────────────────────────────────────────
 
     def compute(self) -> MPCWeights:
-        """计算并返回自适应的 Q / R 权重矩阵。"""
+        """计算并返回自适应的 Q / R 权重矩阵（含全惯量张量非对角耦合项）。"""
         q_diag = self._Q_BASE.copy()
 
-        rp_scale = self._roll_pitch_scale() if self._q_rp_override is None else (
-            self._q_rp_override / self._Q_BASE[0]
-        )
-        q_diag[0] *= rp_scale   # roll
-        q_diag[1] *= rp_scale   # pitch
+        if self._q_rp_override is None:
+            roll_scale, pitch_scale = self._roll_pitch_scale()
+        else:
+            roll_scale = pitch_scale = self._q_rp_override / self._Q_BASE[0]
+        q_diag[0] *= roll_scale    # roll
+        q_diag[1] *= pitch_scale   # pitch
 
         z_scale = self._height_weight_scale() if self._q_z_override is None else (
             self._q_z_override / self._Q_BASE[5]
@@ -403,6 +436,8 @@ class AdaptiveMPCWeights:
         q_diag[5] *= z_scale    # z
 
         Q = np.diag(q_diag)
+        # 注入全惯量张量非对角耦合项
+        self._inertia_off_diagonal_coupling(q_diag, Q)
 
         r_scale = self._force_weight_scale() if self._r_scale_override is None else self._r_scale_override
         r_per_leg = self._R_BASE_PER_LEG * r_scale

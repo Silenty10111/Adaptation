@@ -25,6 +25,9 @@ import numpy as np
 TARGET_PYTHON = "/data/conda/envs/unitree-rl/bin/python"
 TARGET_LD_PATH = "/data/conda/envs/unitree-rl/lib"
 ASSET_DIR_NAME = "robot_assets"
+DEFAULT_VARIANTS_DIR = "variants"
+DEFAULT_VARIANT_URDF = "robot.urdf"
+STANDARD_SUBDIR = "standard_hexapod"
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +95,31 @@ def compute_plan(description: dict, state: dict) -> dict:
 
 def load_description(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def resolve_asset_paths(description_path: Path, urdf_path: Path) -> tuple[Path, Path]:
+    if urdf_path.exists() and description_path.exists():
+        return description_path, urdf_path
+
+    assets_root = Path(ASSET_DIR_NAME)
+    # 1) Prefer latest variant URDF if present.
+    variants_dir = assets_root / DEFAULT_VARIANTS_DIR
+    if variants_dir.exists():
+        candidates = list(variants_dir.glob(f"*/{DEFAULT_VARIANT_URDF}"))
+        if candidates:
+            candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            candidate_urdf = candidates[0]
+            fallback_desc = assets_root / "robot_description.json"
+            if fallback_desc.exists():
+                return fallback_desc, candidate_urdf
+
+    # 2) Fall back to the standard hexapod assets if present.
+    standard_desc = assets_root / STANDARD_SUBDIR / "robot_description.json"
+    standard_urdf = assets_root / STANDARD_SUBDIR / "generated_robot.urdf"
+    if standard_desc.exists() and standard_urdf.exists():
+        return standard_desc, standard_urdf
+
+    return description_path, urdf_path
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +235,14 @@ def get_body_xy(gym, env, actor, gymapi) -> List[float]:
     return [float(p["x"]), float(p["y"])]
 
 
+def get_body_z(gym, env, actor, gymapi) -> float:
+    """Return Z of the actor's root body."""
+    states = gym.get_actor_rigid_body_states(env, actor, gymapi.STATE_POS)
+    if states is None or len(states) == 0:
+        return 0.0
+    return float(states["pose"]["p"][0]["z"])
+
+
 def get_body_attitude(gym, env, actor, gymapi) -> tuple:
     """Return (roll, pitch, yaw) of the actor's root body in radians."""
     states = gym.get_actor_rigid_body_states(env, actor, gymapi.STATE_POS)
@@ -226,7 +262,11 @@ def leg_group_phase(leg_id: int, group_a: List[int], group_b: List[int],
         return base_phase + float(np.pi)
     if leg_id in group_a:
         return base_phase
-    return base_phase
+    # Legs not in any group (group_c passive legs or unassigned):
+    # return a phase whose sin is always 0 by convention — caller must detect
+    # them separately; returning NaN here would break callers, so return
+    # a canary value of exactly 0.0 (sin(0)=0 = neutral stance).
+    return 0.0
 
 
 def foot_xy_map(description: dict) -> Dict[int, np.ndarray]:
@@ -251,12 +291,26 @@ def build_gait_targets(
     swing_lift: float,
     stance_drop: float,
     swing_drop: float,
+    *,
+    per_leg_stride_amplitudes: Optional[Dict[str, float]] = None,
+    touchdown_ramp: Optional[Dict[int, int]] = None,
+    touchdown_ramp_steps: int = 8,
 ) -> np.ndarray:
+    """
+    构造每步的关节目标位置。
+
+    per_leg_stride_amplitudes : {str(leg_id): amplitude} — CPG 每腿步幅缩放因子
+    touchdown_ramp             : {leg_id: steps_since_touchdown} — 落地淡入状态字典
+                                 由调用方维护，本函数会就地更新脚从摆动→支撑时的计数器
+    touchdown_ramp_steps       : 淡入动作持续的仿真步数（默认 8 步）
+    """
     targets = defaults.copy()
     phase = 2.0 * np.pi * max(gait_freq, 0.02) * sim_time
 
     group_a = list(gait_plan.get("topology", {}).get("groups", {}).get("group_a", []))
     group_b = list(gait_plan.get("topology", {}).get("groups", {}).get("group_b", []))
+    group_c = list(gait_plan.get("topology", {}).get("groups", {}).get("group_c", []))
+    active_swing_legs = set(group_a) | set(group_b)   # group_c stays in stance
 
     forward_axis = np.asarray(gait_plan.get("final_forward_axis", [1.0, 0.0]), dtype=float)
     forward_axis = forward_axis / max(float(np.linalg.norm(forward_axis)), 1e-9)
@@ -266,7 +320,19 @@ def build_gait_targets(
     # Lateral axis: 90° CCW from forward axis (points to the "left" of the robot)
     lateral_axis = np.array([-forward_axis[1], forward_axis[0]], dtype=float)
 
+    amp_map: Dict[str, float] = per_leg_stride_amplitudes or {}
+
     for leg_id, joints in triplets.items():
+        # ── Group-c passive legs: always in stance (no swing) ─────────────────
+        if leg_id in group_c:
+            targets[joints["lift_idx"]] = ratio_to_joint(
+                joints["lift_lower"], joints["lift_upper"], stance_lift)
+            targets[joints["drop_idx"]] = ratio_to_joint(
+                joints["drop_lower"], joints["drop_upper"], stance_drop)
+            targets[joints["swing_idx"]] = ratio_to_joint(
+                joints["swing_lower"], joints["swing_upper"], 0.5)
+            continue
+
         lg_phase = leg_group_phase(leg_id, group_a, group_b, phase)
         swing_wave = float(np.sin(lg_phase))
         # Smoothstep with widened window so stance↔swing transition takes ~13 sim steps
@@ -280,9 +346,44 @@ def build_gait_targets(
         lateral_pos = float(np.dot(foot_xy_vec, lateral_axis))
         dir_sign = -1.0 if lateral_pos > 0.0 else 1.0
 
+        # ── CPG 每腿步幅解耦 ─────────────────────────────────────────────────
+        leg_stride_scale = float(amp_map.get(str(leg_id), 1.0))
+        effective_amp = swing_amp * leg_stride_scale
+
         lift_r = stance_lift + (swing_lift - stance_lift) * swing_alpha
         drop_r = stance_drop + (swing_drop - stance_drop) * swing_alpha
-        swing_r = 0.5 + swing_amp * dir_sign * swing_wave
+        swing_r = 0.5 + effective_amp * dir_sign * swing_wave
+
+        # ── 触地淡入滤波（Touchdown ramp-up） ───────────────────────────────
+        if touchdown_ramp is not None:
+            is_swing = swing_wave > 0.0  # sin > 0 → 摆动相
+            was_ramping = leg_id in touchdown_ramp
+            if not is_swing:
+                # 支撑相：若之前处于摆动 → 开始淡入计数
+                if leg_id not in touchdown_ramp:
+                    # 首次进入支撑或已完成淡入 → 不在字典里，无操作
+                    pass
+                else:
+                    # 正在淡入：计数递增
+                    touchdown_ramp[leg_id] += 1
+                    ramp_progress = min(touchdown_ramp[leg_id] / touchdown_ramp_steps, 1.0)
+                    if ramp_progress >= 1.0:
+                        del touchdown_ramp[leg_id]  # 淡入完成
+                    else:
+                        # 线性插值从 default（站立中位）到目标，抑制突变力冲击
+                        default_lift = ratio_to_joint(joints["lift_lower"], joints["lift_upper"], 0.5)
+                        default_drop = ratio_to_joint(joints["drop_lower"], joints["drop_upper"], 0.5)
+                        default_swing = joints["swing_lower"] + 0.5 * (joints["swing_upper"] - joints["swing_lower"])
+                        tgt_lift = ratio_to_joint(joints["lift_lower"], joints["lift_upper"], lift_r)
+                        tgt_drop = ratio_to_joint(joints["drop_lower"], joints["drop_upper"], drop_r)
+                        tgt_swing = ratio_to_joint(joints["swing_lower"], joints["swing_upper"], swing_r)
+                        targets[joints["lift_idx"]]  = default_lift  + ramp_progress * (tgt_lift  - default_lift)
+                        targets[joints["drop_idx"]]  = default_drop  + ramp_progress * (tgt_drop  - default_drop)
+                        targets[joints["swing_idx"]] = default_swing + ramp_progress * (tgt_swing - default_swing)
+                        continue
+            else:
+                # 摆动相：标记下一次进入支撑时需要淡入
+                touchdown_ramp[leg_id] = 0
 
         targets[joints["lift_idx"]] = ratio_to_joint(
             joints["lift_lower"], joints["lift_upper"], lift_r,
@@ -330,7 +431,12 @@ def main() -> int:
     args = parse_args()
     gymapi = load_gymapi()
 
-    description = load_description(args.description)
+    desc_path, urdf_path = resolve_asset_paths(args.description, args.urdf)
+    if (desc_path, urdf_path) != (args.description, args.urdf):
+        print(f"[INFO] Using resolved description: {desc_path}")
+        print(f"[INFO] Using resolved URDF: {urdf_path}")
+
+    description = load_description(desc_path)
     gait_plan = compute_plan(description, {})
 
     # ---- print plan summary -------------------------------------------------
@@ -384,7 +490,7 @@ def main() -> int:
         gym.add_ground(sim, plane_params)
 
         # Asset
-        urdf_path = args.urdf.resolve()
+        urdf_path = urdf_path.resolve()
         if not urdf_path.exists():
             print(f"[ERROR] URDF not found: {urdf_path}")
             return 1
@@ -460,13 +566,37 @@ def main() -> int:
         triplets = resolve_joint_triplets(gym, env, actor, description)
 
         # ---- Build standing posture targets (legs angled down to ground) ----
+        # Heuristic: if description foot z-positions (at joint angles=0) are already
+        # at ~body_height depth, use neutral joint angles (angle=0) as stand targets.
+        # Otherwise use the standard hexapod ratios (lift≈min, drop≈max).
+        foot_z_vals = [
+            float(lnk["default_world_origin"][2])
+            for lnk in description.get("links", [])
+            if lnk.get("role") == "foot" and lnk.get("leg_id") is not None
+        ]
+        mean_foot_z = float(np.mean(foot_z_vals)) if foot_z_vals else -0.35
+        # If neutral pose already lands feet within 0.12 m of ground → use angle=0
+        feet_at_ground = abs(mean_foot_z + args.body_height) < 0.12
+        if feet_at_ground:
+            print(f"[Stand] Neutral-joint stand pose (foot_z≈{mean_foot_z:.3f},"
+                  f" body_h={args.body_height:.2f})")
+
         stand_targets = default_targets.copy()
         for leg_id, joints in triplets.items():
+            if feet_at_ground:
+                # angle=0 for lift and drop so feet stay at neutral ground position
+                lift_r = max(0.0, min(1.0,
+                    (0.0 - joints["lift_lower"]) / max(joints["lift_upper"] - joints["lift_lower"], 1e-9)))
+                drop_r = max(0.0, min(1.0,
+                    (0.0 - joints["drop_lower"]) / max(joints["drop_upper"] - joints["drop_lower"], 1e-9)))
+            else:
+                lift_r = 0.05    # standard hexapod: lift near minimum to reach down
+                drop_r = 0.995   # standard hexapod: drop near maximum to reach down
             stand_targets[joints["lift_idx"]] = ratio_to_joint(
-                joints["lift_lower"], joints["lift_upper"], 0.05,
+                joints["lift_lower"], joints["lift_upper"], lift_r,
             )
             stand_targets[joints["drop_idx"]] = ratio_to_joint(
-                joints["drop_lower"], joints["drop_upper"], 0.995,
+                joints["drop_lower"], joints["drop_upper"], drop_r,
             )
             stand_targets[joints["swing_idx"]] = ratio_to_joint(
                 joints["swing_lower"], joints["swing_upper"], 0.50,
@@ -490,28 +620,33 @@ def main() -> int:
         if hold_steps > 0:
             print(f"[HOLD] Stabilising for {hold_steps} steps ...")
             # Adaptive-sag controller state (reuses test_gym.py logic)
+            # Disabled for irregular robots (feet_at_ground=True) since neutral
+            # joints already give ground contact; sag controller causes drift.
             for _ in range(hold_steps):
-                dof_states_pos = gym.get_actor_dof_states(
-                    env, actor, gymapi.STATE_POS,
-                )
-                joint_pos = np.asarray(dof_states_pos["pos"], dtype=np.float32)
-                for idx, name in enumerate(dof_names):
-                    sag = stand_targets[idx] - joint_pos[idx]
-                    if "_drop" in name and sag > 0.004:
-                        stand_targets[idx] = min(
-                            finite_upper[idx],
-                            stand_targets[idx] + min(0.012, 0.22 * sag),
-                        )
-                    elif "_lift" in name and sag > 0.004:
-                        stand_targets[idx] = max(
-                            finite_lower[idx],
-                            stand_targets[idx] - min(0.008, 0.16 * sag),
-                        )
-                stand_targets = np.clip(stand_targets, finite_lower, finite_upper)
+                if not feet_at_ground:
+                    dof_states_pos = gym.get_actor_dof_states(
+                        env, actor, gymapi.STATE_POS,
+                    )
+                    joint_pos = np.asarray(dof_states_pos["pos"], dtype=np.float32)
+                    for idx, name in enumerate(dof_names):
+                        sag = stand_targets[idx] - joint_pos[idx]
+                        if "_drop" in name and sag > 0.004:
+                            stand_targets[idx] = min(
+                                finite_upper[idx],
+                                stand_targets[idx] + min(0.012, 0.22 * sag),
+                            )
+                        elif "_lift" in name and sag > 0.004:
+                            stand_targets[idx] = max(
+                                finite_lower[idx],
+                                stand_targets[idx] - min(0.008, 0.16 * sag),
+                            )
+                    stand_targets = np.clip(stand_targets, finite_lower, finite_upper)
                 gym.set_actor_dof_position_targets(env, actor, stand_targets)
                 gym.simulate(sim)
                 gym.fetch_results(sim, True)
             print("[HOLD] Stabilisation complete.")
+
+
 
         print(f"[OK] Gait: {args.gait_frequency} Hz, "
               f"groups A/B phase-offset = π")
@@ -520,6 +655,39 @@ def main() -> int:
         forward_axis = gait_plan.get("final_forward_axis", [1.0, 0.0])
         group_a = topo["groups"]["group_a"]
         group_b = topo["groups"]["group_b"]
+
+        # ── 为形态自适应地计算 stance/swing lift/drop 比率 ─────────────────
+        # 对 "关节=0 即地面接触" 的机器人：stance 保持 angle≈0，swing 稍微抬起
+        if feet_at_ground and triplets:
+            fj = next(iter(triplets.values()))
+            lift_range = max(fj["lift_upper"] - fj["lift_lower"], 1e-9)
+            drop_range = max(fj["drop_upper"] - fj["drop_lower"], 1e-9)
+            _stance_lift = max(0.0, min(1.0, (0.0  - fj["lift_lower"]) / lift_range))  # angle=0
+            # Diagonal lift axis: negative angle raises foot (~-0.25 rad lifts ~4.5 cm)
+            _swing_lift  = max(0.0, min(1.0, (-0.25 - fj["lift_lower"]) / lift_range))
+            _stance_drop = max(0.0, min(1.0, (0.0  - fj["drop_lower"]) / drop_range))  # angle=0
+            _swing_drop  = max(0.0, min(1.0, (0.0  - fj["drop_lower"]) / drop_range))  # keep flat
+            print(f"[Stand] Morphology-adapted lift/drop ratios: "
+                  f"stance_lift={_stance_lift:.3f}, swing_lift={_swing_lift:.3f}, "
+                  f"stance_drop={_stance_drop:.3f}, swing_drop={_swing_drop:.3f}")
+        else:
+            _stance_lift = args.stance_lift_ratio
+            _swing_lift  = args.swing_lift_ratio
+            _stance_drop = args.stance_drop_ratio
+            _swing_drop  = args.swing_drop_ratio
+
+        # CPG 每腿步幅缩放因子（来自 adaptive_gait 的 per_leg_stride_amplitudes）
+        per_leg_stride_amplitudes: Dict[str, float] = {
+            str(k): float(v)
+            for k, v in topo.get("per_leg_stride_amplitudes", {}).items()
+        }
+        if per_leg_stride_amplitudes:
+            print(f"[OK] Per-leg stride amplitudes: { {int(k): round(v, 3) for k, v in per_leg_stride_amplitudes.items()} }")
+        else:
+            print("[INFO] No per_leg_stride_amplitudes found; using uniform swing_amp.")
+
+        # 触地淡入状态：{leg_id: steps_since_touchdown}，在摆动→支撑切换时初始化为 0
+        touchdown_ramp: Dict[int, int] = {}
 
         # Foot positions in world frame from description (offsets from body)
         fmap = foot_xy_map(description)
@@ -547,8 +715,10 @@ def main() -> int:
                 targets = build_gait_targets(
                     description, gait_plan, triplets, stand_targets.copy(), sim_time,
                     args.gait_frequency, args.swing_ratio_amplitude,
-                    args.stance_lift_ratio, args.swing_lift_ratio,
-                    args.stance_drop_ratio, args.swing_drop_ratio,
+                    _stance_lift, _swing_lift,
+                    _stance_drop, _swing_drop,
+                    per_leg_stride_amplitudes=per_leg_stride_amplitudes,
+                    touchdown_ramp=touchdown_ramp,
                 )
                 gym.set_actor_dof_position_targets(env, actor, targets)
                 gym.simulate(sim)
@@ -615,8 +785,10 @@ def main() -> int:
                 targets = build_gait_targets(
                     description, gait_plan, triplets, stand_targets.copy(), sim_time,
                     args.gait_frequency, args.swing_ratio_amplitude,
-                    args.stance_lift_ratio, args.swing_lift_ratio,
-                    args.stance_drop_ratio, args.swing_drop_ratio,
+                    _stance_lift, _swing_lift,
+                    _stance_drop, _swing_drop,
+                    per_leg_stride_amplitudes=per_leg_stride_amplitudes,
+                    touchdown_ramp=touchdown_ramp,
                 )
                 gym.set_actor_dof_position_targets(env, actor, targets)
                 gym.simulate(sim)
@@ -627,10 +799,10 @@ def main() -> int:
                 com_trail.append(body_xy)
 
                 if (step + 1) % 400 == 0:
+                    body_z = get_body_z(gym, env, actor, gymapi)
                     print(f"[{step + 1:5d}/{args.steps}] "
-                          f"body_xy = [{body_xy[0]:.4f}, {body_xy[1]:.4f}]  "
-                          f"roll = {math.degrees(roll):.1f}°  "
-                          f"pitch = {math.degrees(pitch):.1f}°")
+                          f"z={body_z:.3f} xy=[{body_xy[0]:.4f},{body_xy[1]:.4f}] "
+                          f"roll={math.degrees(roll):.1f}° pitch={math.degrees(pitch):.1f}°")
 
                 sim_time += dt
 

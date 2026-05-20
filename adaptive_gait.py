@@ -468,14 +468,61 @@ def compute_adaptive_plan(
             proj = 1.0  # no geometry data → assume full contribution
         swing_projections[lid] = proj
 
+    # ---- Per-leg stride amplitude limits ------------------------------------
+    # Each leg gets a stride amplitude in [0, 1] (normalised).
+    # The limit is derived from the leg's kinematic reach relative to the
+    # maximum reach across all legs, scaled further by the forward projection.
+    #
+    # Rationale: shorter / offset legs should not receive the same full-range
+    # joint commands as long legs — doing so causes joint-limit violations and
+    # physically mismatched ground clearance across the tripod.
+    per_leg_stride_amplitudes: Dict[int, float] = {}
+
+    # Gather outward reach (hip → foot distance) for normalisation.
+    reaches: Dict[int, float] = {}
+    for lid in active_legs:
+        h = hip_xy.get(lid)
+        f = foot_xy.get(lid)
+        if h is not None and f is not None:
+            reaches[lid] = float(np.linalg.norm(f - h))
+        else:
+            reaches[lid] = 1.0
+
+    max_reach = max(reaches.values()) if reaches else 1.0
+    if max_reach < EPS:
+        max_reach = 1.0
+
+    # Also normalise by swing joint range (wider-range joints can afford more amp).
+    max_swing_range = max(swing_ranges.values()) if swing_ranges else 1.0
+    if max_swing_range < EPS:
+        max_swing_range = 1.0
+
+    for lid in active_legs:
+        reach_ratio = reaches.get(lid, 1.0) / max_reach           # 0..1
+        range_ratio = swing_ranges.get(lid, max_swing_range) / max_swing_range  # 0..1
+        proj_mag = abs(swing_projections.get(lid, 1.0))            # 0..1
+        # Combined: sqrt of geometry factors, clamped to [0.25, 1.0]
+        raw = math.sqrt(reach_ratio * range_ratio) * proj_mag
+        per_leg_stride_amplitudes[lid] = float(np.clip(raw, 0.25, 1.0))
+
     # Classify active legs into three groups:
     #   group_a / group_b : alternating active tripods (good forward projection)
     #   group_c           : passive legs (low forward projection, stay neutral)
     passive_ids: set = {lid for lid in active_legs
                         if abs(swing_projections.get(lid, 1.0)) < PASSIVE_THRESHOLD}
-    group_c: List[int] = [lid for lid in active_legs if lid in passive_ids]
+    group_c: List[int] = sorted(lid for lid in active_legs if lid in passive_ids)
     group_a = [lid for lid in group_a if lid not in passive_ids]
     group_b = [lid for lid in group_b if lid not in passive_ids]
+
+    # Also assign any un-grouped active leg (projection OK but missed by polar alternation)
+    # to whichever group it balances — prevents "ghost" legs defaulting to group_a phase.
+    assigned = set(group_a) | set(group_b) | set(group_c)
+    for lid in active_legs:
+        if lid not in assigned:
+            if len(group_a) <= len(group_b):
+                group_a.append(lid)
+            else:
+                group_b.append(lid)
 
     # ---- CPG coupling matrix (geometry-aware) --------------------------------
     cpg_cfg = state.get("cpg", {}) if isinstance(state.get("cpg", {}), dict) else {}
@@ -590,6 +637,8 @@ def compute_adaptive_plan(
             "groups": {"group_a": group_a, "group_b": group_b, "group_c": group_c},
             "phase_offsets": {"group_a": 0.0, "group_b": float(np.pi)},
             "swing_projections": {str(lid): swing_projections[lid] for lid in active_legs},
+            "per_leg_stride_amplitudes": {str(lid): per_leg_stride_amplitudes.get(lid, 1.0)
+                                          for lid in active_legs},
             "inhibition_rules": inhibition_rules,
             "coupling_matrix_zeroed_edges": [],
         },
