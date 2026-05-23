@@ -1,0 +1,10 @@
+[
+  {
+    "robot": "robot_ref_standard",
+    "status": "ok",
+    "ssm": 0.5800362200879557,
+    "num_legs": 6,
+    "fwd_dist": -0.588031191378835,
+    "lat_dist": 0.5016473541036212
+  }
+]

@@ -208,41 +208,6 @@ def compute_adaptive_plan(
         cos_xy += pos * w
     cos_xy /= sum_w
 
-    # Prefer PCA on trunk polygon (body long axis) over foot positions.
-    # Foot positions spread wide laterally → foot PCA gives lateral axis, not forward.
-    # Trunk polygon better reflects the robot's intended forward direction.
-    trunk_pts_raw = description.get("trunk_polygon_xy", [])
-    pca_pts: Optional[np.ndarray] = None
-    if trunk_pts_raw and len(trunk_pts_raw) >= 2:
-        pca_pts = np.array(trunk_pts_raw, dtype=float)
-    elif len(hip_xy) >= 2:
-        # Hip positions: much less lateral spread, better PCA forward axis
-        pca_pts = np.array(list(hip_xy.values()), dtype=float)
-
-    if pca_pts is not None and len(pca_pts) >= 2:
-        pca_center = pca_pts.mean(axis=0)
-        pca_diff = pca_pts - pca_center
-        pca_cov = pca_diff.T @ pca_diff / max(len(pca_pts), 1)
-        eigenvals, eigenvecs = np.linalg.eigh(pca_cov)
-        idx_max = int(np.argmax(eigenvals))
-        initial_axis = eigenvecs[:, idx_max].copy()
-    else:
-        # Fallback: PCA on foot positions, pick the minor axis (less lateral spread)
-        cov = np.zeros((2, 2), dtype=float)
-        for lid, pos in foot_xy.items():
-            w = weights.get(lid, 0.0)
-            if w <= 0.0:
-                continue
-            diff = pos - cos_xy
-            cov += w * np.outer(diff, diff)
-        cov /= max(sum_w, EPS)
-        eigenvals, eigenvecs = np.linalg.eigh(cov)
-        # Use MINOR axis (min eigenvalue) since max variance is lateral for hexapod
-        idx_min = int(np.argmin(eigenvals))
-        initial_axis = eigenvecs[:, idx_min].copy()
-
-    initial_axis = _unit(initial_axis)
-
     # ---- COM projection (used for stability / compensation) ------------------
     projected_com_xy = np.zeros(2, dtype=float)
     total_mass = 0.0
@@ -259,22 +224,71 @@ def compute_adaptive_plan(
     if total_mass > EPS:
         projected_com_xy /= total_mass
 
+    # ---- Mass-Weighted PCA (Principal Axis of Inertia) -----------------------
+    cov_mass = np.zeros((2, 2), dtype=float)
+    for link in description.get("links", []):
+        mp = link.get("mass_properties", {})
+        mass = float(mp.get("mass", 0.0))
+        if mass <= 0.0:
+            continue
+        origin = np.asarray(link.get("default_world_origin", [0.0, 0.0, 0.0]), dtype=float)
+        cm_local = np.asarray(mp.get("center_mass", [0.0, 0.0, 0.0]), dtype=float)
+        world_cm = origin + cm_local
+        diff = world_cm[:2] - projected_com_xy
+        cov_mass += mass * np.outer(diff, diff)
+    
+    if total_mass > EPS:
+        cov_mass /= total_mass
+
+    eigenvals, eigenvecs = np.linalg.eigh(cov_mass)
+    # Use MAJOR axis (max eigenvalue) as the principal inertia axis for stable movement.
+    idx_max = int(np.argmax(eigenvals))
+    major_axis = _unit(eigenvecs[:, idx_max].copy())
+    # Also include the perpendicular (minor) axis: for robots whose legs extend along
+    # the major body axis (e.g. standard hexapod with legs on both Y-sides), the
+    # actual forward direction may be along the MINOR axis (perpendicular to the
+    # longest body dimension).
+    minor_axis = _unit(np.array([-major_axis[1], major_axis[0]], dtype=float))
+    candidate_axes = [major_axis, -major_axis, minor_axis, -minor_axis]
+
     # ---- Phase-1 torque-aware scoring of ±axis -------------------------------
     def _build_default_swing_vector(leg_id: int) -> np.ndarray:
-        """Auto-generate a swing vector for a leg without an explicit one."""
+        """Auto-generate a swing vector for a leg without an explicit one.
+
+        Uses the true kinematic drive direction: when the swing joint rotates,
+        the foot moves tangent to the arc centred at the hip.  The vector
+        magnitude equals the hip→foot reach (moment arm), so longer legs
+        contribute proportionally more in _score_direction.
+
+        Convention: the returned vector points in the direction the foot moves
+        during the forward-swing half-cycle (sin > 0).  During stance the body
+        is pushed in the *same* direction (foot fixed → body advances).
+        """
         hip = hip_xy.get(leg_id)
-        if hip is None:
-            hip = np.zeros(2, dtype=float)
-        # swing is tangent to the radial direction from CoS → hip
-        radial = hip - cos_xy
-        radial_norm = float(np.linalg.norm(radial))
-        if radial_norm < EPS:
+        foot = foot_xy.get(leg_id)
+        if hip is None or foot is None:
             return np.array([0.0, 0.0], dtype=float)
-        tangent = np.array([-radial[1], radial[0]], dtype=float) / radial_norm
-        # Determine lateral side via cross product with body centroid
-        side = 1.0 if np.cross(radial, tangent) > 0 else -1.0
-        # Prefer forward-sweeping direction
-        return tangent * side * 0.15
+
+        # Hip→foot vector = moment arm of swing joint
+        hip_to_foot = foot - hip
+        reach = float(np.linalg.norm(hip_to_foot))
+        if reach < EPS:
+            return np.array([0.0, 0.0], dtype=float)
+
+        # Foot velocity direction when swing joint rotates CCW:
+        #   rotate hip_to_foot by 90° CCW → [-dy, dx]
+        foot_vel_dir = np.array([-hip_to_foot[1], hip_to_foot[0]], dtype=float) / reach
+
+        # Choose rotation sense so that the foot sweeps forward (dot with
+        # body→foot outward direction > 0 for the foot to go forward).
+        # If foot_vel_dir already points in the forward half-plane, keep it;
+        # otherwise flip.  We use the centroid-to-foot outward radial as proxy.
+        outward = foot - cos_xy
+        if float(np.dot(foot_vel_dir, outward)) < 0.0:
+            foot_vel_dir = -foot_vel_dir
+
+        # Scale by reach so longer legs carry more weight in the score
+        return foot_vel_dir * reach
 
     user_swings = state.get("swing_vectors", {})
     state_phases_legs = state.get("phases", {})
@@ -311,19 +325,30 @@ def compute_adaptive_plan(
             range_gain = 1.0 + min(delta, 1.2)
 
             score += proj * v_norm * phase_gain * range_gain
+            
+        # CoM eccentricity penalty - penalize if CoM is far from lateral corridor center
+        lat_axis = np.array([-direction[1], direction[0]], dtype=float)
+        lat_positions = [float(np.dot(pos, lat_axis)) for lid, pos in foot_xy.items() if lid not in missing_ids]
+        if lat_positions:
+            corridor_center = (min(lat_positions) + max(lat_positions)) / 2.0
+            com_lat = float(np.dot(projected_com_xy, lat_axis))
+            eccentricity = abs(com_lat - corridor_center)
+            score -= eccentricity * 0.5
+
         return score
 
-    pos_score = _score_direction(initial_axis)
-    neg_score = _score_direction(-initial_axis)
+    pos_score = _score_direction(major_axis)  # for report only
+    neg_score = _score_direction(-major_axis)  # for report only
 
-    # 对称六足机器人可能出现 pos_score == neg_score 的平局（左右镜像消除）。
-    # 加一个微小的 +X 方向先验：当 initial_axis 沿 +X 时给 pos 方向轻微加分，
-    # 确保前进方向始终稳定指向 +X（躯干长轴方向）。
+    # Evaluate all 4 candidate directions and pick the best
     _X_PRIOR = 0.04
-    pos_score_adj = pos_score + _X_PRIOR * float(np.dot(initial_axis, [1.0, 0.0]))
-    neg_score_adj = neg_score + _X_PRIOR * float(np.dot(-initial_axis, [1.0, 0.0]))
-    final_axis = initial_axis.copy() if pos_score_adj >= neg_score_adj else -initial_axis.copy()
-    final_axis = _unit(final_axis)
+    best_score = -1e18
+    final_axis = major_axis.copy()
+    for cand in candidate_axes:
+        s = _score_direction(cand) + _X_PRIOR * float(np.dot(cand, [1.0, 0.0]))
+        if s > best_score:
+            best_score = s
+            final_axis = cand.copy()
 
     drive_resultant = final_axis * max(pos_score, neg_score)
 
@@ -501,15 +526,21 @@ def compute_adaptive_plan(
         reach_ratio = reaches.get(lid, 1.0) / max_reach           # 0..1
         range_ratio = swing_ranges.get(lid, max_swing_range) / max_swing_range  # 0..1
         proj_mag = abs(swing_projections.get(lid, 1.0))            # 0..1
-        # Combined: sqrt of geometry factors, clamped to [0.25, 1.0]
+        # Combined: sqrt of geometry factors, clamped to [0.15, 0.75]
         raw = math.sqrt(reach_ratio * range_ratio) * proj_mag
-        per_leg_stride_amplitudes[lid] = float(np.clip(raw, 0.25, 1.0))
+        per_leg_stride_amplitudes[lid] = float(np.clip(raw, 0.15, 0.75))
 
     # Classify active legs into three groups:
-    #   group_a / group_b : alternating active tripods (good forward projection)
-    #   group_c           : passive legs (low forward projection, stay neutral)
+    #   group_a / group_b : alternating active tripods (good or neutral forward projection)
+    #   group_c           : passive legs whose swing motion OPPOSES forward motion (proj < 0)
+    #
+    # Rationale: a leg with proj ≈ 0 (e.g. standard hexapod centerline legs) contributes
+    # zero swing thrust but is NOT an obstacle — keeping it in group_a/b retains tripod
+    # stability.  Only legs with proj < −PASSIVE_THRESHOLD (swing that actively pushes the
+    # body backward) are demoted to group_c.
+    PASSIVE_THRESHOLD = 0.10  # legs with proj < −threshold are demoted to group_c
     passive_ids: set = {lid for lid in active_legs
-                        if abs(swing_projections.get(lid, 1.0)) < PASSIVE_THRESHOLD}
+                        if swing_projections.get(lid, 0.0) < -PASSIVE_THRESHOLD}
     group_c: List[int] = sorted(lid for lid in active_legs if lid in passive_ids)
     group_a = [lid for lid in group_a if lid not in passive_ids]
     group_b = [lid for lid in group_b if lid not in passive_ids]
@@ -523,6 +554,20 @@ def compute_adaptive_plan(
                 group_a.append(lid)
             else:
                 group_b.append(lid)
+
+    # Cap swing group size to prevent too many legs lifting simultaneously on
+    # highly asymmetric robots. The limit scales with the robot: at most
+    # ceil(N/2) legs per group (which is exactly what a standard hexapod needs:
+    # 3 legs per group). Only demote when a group is genuinely over-sized
+    # relative to the balanced split.
+    n_active = max(len(group_a) + len(group_b) + len(group_c), 1)
+    MAX_SWING_GROUP_SIZE = math.ceil(n_active / 2)
+    for grp, other in [(group_a, group_b), (group_b, group_a)]:
+        while len(grp) > MAX_SWING_GROUP_SIZE:
+            # Demote the leg with lowest swing projection to group_c
+            leg_to_demote = min(grp, key=lambda lid: abs(swing_projections.get(lid, 1.0)))
+            grp.remove(leg_to_demote)
+            group_c.append(leg_to_demote)
 
     # ---- CPG coupling matrix (geometry-aware) --------------------------------
     cpg_cfg = state.get("cpg", {}) if isinstance(state.get("cpg", {}), dict) else {}
@@ -604,7 +649,7 @@ def compute_adaptive_plan(
     plan = {
         "support_center_xy": cos_xy.tolist(),
         "projected_com_xy": projected_com_xy.tolist(),
-        "initial_virtual_forward_axis": initial_axis.tolist(),
+        "initial_virtual_forward_axis": major_axis.tolist(),
         "final_forward_axis": final_axis.tolist(),
         "drive_resultant_xy": drive_resultant.tolist(),
         "direction_scores": {"positive": pos_score, "negative": neg_score},

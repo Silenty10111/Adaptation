@@ -1,0 +1,46 @@
+[
+  {
+    "robot": "robot_ref_standard",
+    "status": "ok",
+    "ssm": 0.5800362200879557,
+    "num_legs": 6,
+    "fwd_dist": -0.588031191378835,
+    "lat_dist": 0.5016473541036212
+  },
+  {
+    "robot": "robot_00_seed7",
+    "status": "ok",
+    "ssm": 0.0947959335871471,
+    "num_legs": 10,
+    "fwd_dist": 1.2439210468242435e-07,
+    "lat_dist": -8.85656131003377e-07
+  },
+  {
+    "robot": "robot_01_seed42",
+    "status": "ok",
+    "ssm": 0.17632042982615906,
+    "num_legs": 4,
+    "fwd_dist": 0.7990437711936178,
+    "lat_dist": -0.19205412605051858
+  },
+  {
+    "robot": "robot_02_seed137",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_03_seed256",
+    "status": "ok",
+    "ssm": 0.13108042522035362,
+    "num_legs": 7,
+    "fwd_dist": 1.7285146808060186,
+    "lat_dist": -0.5133622528277936
+  },
+  {
+    "robot": "robot_04_seed512",
+    "status": "ok",
+    "ssm": 0.3908769322327111,
+    "num_legs": 6,
+    "fwd_dist": -0.11226699315232772,
+    "lat_dist": -0.1436144581932509
+  }
+]

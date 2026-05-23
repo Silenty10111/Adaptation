@@ -323,8 +323,11 @@ def build_gait_targets(
     amp_map: Dict[str, float] = per_leg_stride_amplitudes or {}
 
     for leg_id, joints in triplets.items():
-        # ── Group-c passive legs: always in stance (no swing) ─────────────────
+        # ── Group-c passive legs: swing-only micro-push with no lift change ──────
+        # Keeps feet on ground (stability maintained) but oscillates swing joint
+        # slightly to reduce static friction drag and contribute small forward push.
         if leg_id in group_c:
+            # Pure stance: hold swing at mid, press feet firmly into ground for lateral support.
             targets[joints["lift_idx"]] = ratio_to_joint(
                 joints["lift_lower"], joints["lift_upper"], stance_lift)
             targets[joints["drop_idx"]] = ratio_to_joint(
@@ -565,7 +568,11 @@ def main() -> int:
 
         triplets = resolve_joint_triplets(gym, env, actor, description)
 
-        # ---- Build standing posture targets (legs angled down to ground) ----
+        # group_c passive legs keep default friction — they serve as lateral anchors.
+        group_c_topo = topo.get("groups", {}).get("group_c", [])
+        if group_c_topo:
+            print(f"[Friction] group_c legs (lateral anchors, default friction): {group_c_topo}")
+
         # Heuristic: if description foot z-positions (at joint angles=0) are already
         # at ~body_height depth, use neutral joint angles (angle=0) as stand targets.
         # Otherwise use the standard hexapod ratios (lift≈min, drop≈max).
@@ -619,28 +626,27 @@ def main() -> int:
         hold_steps = max(args.hold_steps, 0)
         if hold_steps > 0:
             print(f"[HOLD] Stabilising for {hold_steps} steps ...")
-            # Adaptive-sag controller state (reuses test_gym.py logic)
-            # Disabled for irregular robots (feet_at_ground=True) since neutral
-            # joints already give ground contact; sag controller causes drift.
+            # Sag controller: gently push drop joints down until feet reach ground.
+            # Active for ALL robots including feet_at_ground ones — the detection
+            # threshold (0.12m) may still leave feet 0.028–0.084m above ground.
             for _ in range(hold_steps):
-                if not feet_at_ground:
-                    dof_states_pos = gym.get_actor_dof_states(
-                        env, actor, gymapi.STATE_POS,
-                    )
-                    joint_pos = np.asarray(dof_states_pos["pos"], dtype=np.float32)
-                    for idx, name in enumerate(dof_names):
-                        sag = stand_targets[idx] - joint_pos[idx]
-                        if "_drop" in name and sag > 0.004:
-                            stand_targets[idx] = min(
-                                finite_upper[idx],
-                                stand_targets[idx] + min(0.012, 0.22 * sag),
-                            )
-                        elif "_lift" in name and sag > 0.004:
-                            stand_targets[idx] = max(
-                                finite_lower[idx],
-                                stand_targets[idx] - min(0.008, 0.16 * sag),
-                            )
-                    stand_targets = np.clip(stand_targets, finite_lower, finite_upper)
+                dof_states_pos = gym.get_actor_dof_states(
+                    env, actor, gymapi.STATE_POS,
+                )
+                joint_pos = np.asarray(dof_states_pos["pos"], dtype=np.float32)
+                for idx, name in enumerate(dof_names):
+                    sag = stand_targets[idx] - joint_pos[idx]
+                    if "_drop" in name and sag > 0.004:
+                        stand_targets[idx] = min(
+                            finite_upper[idx],
+                            stand_targets[idx] + min(0.012, 0.22 * sag),
+                        )
+                    elif "_lift" in name and sag > 0.004:
+                        stand_targets[idx] = max(
+                            finite_lower[idx],
+                            stand_targets[idx] - min(0.008, 0.16 * sag),
+                        )
+                stand_targets = np.clip(stand_targets, finite_lower, finite_upper)
                 gym.set_actor_dof_position_targets(env, actor, stand_targets)
                 gym.simulate(sim)
                 gym.fetch_results(sim, True)
@@ -657,16 +663,16 @@ def main() -> int:
         group_b = topo["groups"]["group_b"]
 
         # ── 为形态自适应地计算 stance/swing lift/drop 比率 ─────────────────
-        # 对 "关节=0 即地面接触" 的机器人：stance 保持 angle≈0，swing 稍微抬起
         if feet_at_ground and triplets:
             fj = next(iter(triplets.values()))
             lift_range = max(fj["lift_upper"] - fj["lift_lower"], 1e-9)
             drop_range = max(fj["drop_upper"] - fj["drop_lower"], 1e-9)
-            _stance_lift = max(0.0, min(1.0, (0.0  - fj["lift_lower"]) / lift_range))  # angle=0
-            # Diagonal lift axis: negative angle raises foot (~-0.25 rad lifts ~4.5 cm)
+            # Use standard push-down ratios: feet_at_ground detection only confirmed
+            # feet are CLOSE to ground, but full drop_r (~0.90) is needed for actual contact.
+            _stance_drop = args.stance_drop_ratio   # typically 0.90
+            _stance_lift = max(0.0, min(1.0, (0.0 - fj["lift_lower"]) / lift_range))
             _swing_lift  = max(0.0, min(1.0, (-0.25 - fj["lift_lower"]) / lift_range))
-            _stance_drop = max(0.0, min(1.0, (0.0  - fj["drop_lower"]) / drop_range))  # angle=0
-            _swing_drop  = max(0.0, min(1.0, (0.0  - fj["drop_lower"]) / drop_range))  # keep flat
+            _swing_drop  = _stance_drop  # keep same drop during swing (no knee-lift)
             print(f"[Stand] Morphology-adapted lift/drop ratios: "
                   f"stance_lift={_stance_lift:.3f}, swing_lift={_swing_lift:.3f}, "
                   f"stance_drop={_stance_drop:.3f}, swing_drop={_swing_drop:.3f}")
