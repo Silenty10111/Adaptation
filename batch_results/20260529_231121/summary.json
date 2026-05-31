@@ -1,0 +1,1118 @@
+[
+  {
+    "robot": "robot_ref_standard",
+    "status": "ok",
+    "ssm": 0.5800362200879557,
+    "num_legs": 6,
+    "fwd_dist": 2.5599286338110727,
+    "lat_dist": -0.6457986637251294
+  },
+  {
+    "robot": "robot_02_seed137",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_05_seed9488",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_11_seed4681",
+    "status": "unstable",
+    "ssm": -0.13298074114936492
+  },
+  {
+    "robot": "robot_18_seed5181",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_19_seed2504",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_23_seed7780",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_24_seed8393",
+    "status": "unstable",
+    "ssm": -0.07044573336837147
+  },
+  {
+    "robot": "robot_33_seed6116",
+    "status": "unstable",
+    "ssm": 0.02843814748787697
+  },
+  {
+    "robot": "robot_34_seed9654",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_40_seed2582",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_41_seed7221",
+    "status": "unstable",
+    "ssm": -0.015259435724361671
+  },
+  {
+    "robot": "robot_43_seed7488",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_44_seed7513",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_47_seed6238",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_49_seed4597",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_50_seed7253",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_59_seed7044",
+    "status": "unstable",
+    "ssm": 0.0269600981392838
+  },
+  {
+    "robot": "robot_63_seed8486",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_72_seed4392",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_74_seed6901",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_76_seed7463",
+    "status": "unstable",
+    "ssm": 0.014150482068879274
+  },
+  {
+    "robot": "robot_78_seed7407",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_81_seed9571",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_82_seed4913",
+    "status": "unstable",
+    "ssm": -0.09118990561771514
+  },
+  {
+    "robot": "robot_86_seed8371",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_89_seed9254",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_96_seed6926",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_102_seed9700",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_103_seed2989",
+    "status": "unstable",
+    "ssm": 0.015674341876715646
+  },
+  {
+    "robot": "robot_104_seed6454",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_106_seed5740",
+    "status": "unstable",
+    "ssm": -0.08791345443306325
+  },
+  {
+    "robot": "robot_111_seed4502",
+    "status": "unstable",
+    "ssm": -0.1702460288433114
+  },
+  {
+    "robot": "robot_113_seed1436",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_114_seed6281",
+    "status": "unstable",
+    "ssm": 0.0037538252374792456
+  },
+  {
+    "robot": "robot_115_seed8403",
+    "status": "unstable",
+    "ssm": -0.120353071198624
+  },
+  {
+    "robot": "robot_120_seed7419",
+    "status": "unstable",
+    "ssm": 0.02843982046141544
+  },
+  {
+    "robot": "robot_124_seed7209",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_128_seed9465",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_131_seed2554",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_140_seed9505",
+    "status": "unstable",
+    "ssm": 0.00446895939564668
+  },
+  {
+    "robot": "robot_148_seed8988",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_149_seed1135",
+    "status": "unstable",
+    "ssm": 0.012665150224544815
+  },
+  {
+    "robot": "robot_154_seed6495",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_155_seed1730",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_156_seed1575",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_158_seed7276",
+    "status": "unstable",
+    "ssm": 0.023619280117830835
+  },
+  {
+    "robot": "robot_159_seed1362",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_00_seed7",
+    "status": "ok",
+    "ssm": 0.0947959335871471,
+    "num_legs": 10,
+    "fwd_dist": -0.1841418271548977,
+    "lat_dist": 0.016362148528409462
+  },
+  {
+    "robot": "robot_01_seed42",
+    "status": "ok",
+    "ssm": 0.17632042982615906,
+    "num_legs": 4,
+    "fwd_dist": 0.24797420000444337,
+    "lat_dist": 1.3375757479580728
+  },
+  {
+    "robot": "robot_03_seed256",
+    "status": "ok",
+    "ssm": 0.13108042522035362,
+    "num_legs": 7,
+    "fwd_dist": -0.7720834086170825,
+    "lat_dist": 2.8107944343218336
+  },
+  {
+    "robot": "robot_04_seed512",
+    "status": "ok",
+    "ssm": 0.3908769322327111,
+    "num_legs": 6,
+    "fwd_dist": 0.010778146754549293,
+    "lat_dist": 0.1933216299536473
+  },
+  {
+    "robot": "robot_06_seed3424",
+    "status": "ok",
+    "ssm": 0.2975095468993158,
+    "num_legs": 5,
+    "fwd_dist": 1.1570188774381762,
+    "lat_dist": 0.5769838788257543
+  },
+  {
+    "robot": "robot_07_seed1960",
+    "status": "ok",
+    "ssm": 0.3047544151899015,
+    "num_legs": 6,
+    "fwd_dist": -1.7125514522910794,
+    "lat_dist": 0.732584206731799
+  },
+  {
+    "robot": "robot_08_seed874",
+    "status": "ok",
+    "ssm": 0.051784752001753837,
+    "num_legs": 8,
+    "fwd_dist": -0.07309662246627956,
+    "lat_dist": 0.07679137819644828
+  },
+  {
+    "robot": "robot_09_seed9106",
+    "status": "ok",
+    "ssm": 0.4438627849226454,
+    "num_legs": 8,
+    "fwd_dist": 0.12733921562046582,
+    "lat_dist": 0.014629211574292374
+  },
+  {
+    "robot": "robot_10_seed8385",
+    "status": "ok",
+    "ssm": 0.1812148995289481,
+    "num_legs": 7,
+    "fwd_dist": -0.005428518599978349,
+    "lat_dist": -0.05105471543263964
+  },
+  {
+    "robot": "robot_12_seed951",
+    "status": "ok",
+    "ssm": 0.12339095063006074,
+    "num_legs": 9,
+    "fwd_dist": 0.8079885075813562,
+    "lat_dist": 0.5986993624289638
+  },
+  {
+    "robot": "robot_13_seed5514",
+    "status": "ok",
+    "ssm": 0.0940833222063908,
+    "num_legs": 4,
+    "fwd_dist": 0.441016020583249,
+    "lat_dist": -0.04132179715967982
+  },
+  {
+    "robot": "robot_14_seed3956",
+    "status": "ok",
+    "ssm": 0.10559076065216566,
+    "num_legs": 6,
+    "fwd_dist": -0.8504496822595906,
+    "lat_dist": -0.8706679925876847
+  },
+  {
+    "robot": "robot_15_seed4685",
+    "status": "ok",
+    "ssm": 0.21164165692123701,
+    "num_legs": 10,
+    "fwd_dist": -0.3035950000244994,
+    "lat_dist": -0.14217222909593794
+  },
+  {
+    "robot": "robot_16_seed7320",
+    "status": "ok",
+    "ssm": 0.056328467455705605,
+    "num_legs": 9,
+    "fwd_dist": 0.10357343049463362,
+    "lat_dist": 0.1285057601845694
+  },
+  {
+    "robot": "robot_17_seed9939",
+    "status": "ok",
+    "ssm": 0.2727451015842304,
+    "num_legs": 8,
+    "fwd_dist": 0.2058636126416362,
+    "lat_dist": 0.38115541768871397
+  },
+  {
+    "robot": "robot_20_seed2938",
+    "status": "ok",
+    "ssm": 0.1294203322878851,
+    "num_legs": 6,
+    "fwd_dist": 0.12574544736175292,
+    "lat_dist": -0.3078575725130167
+  },
+  {
+    "robot": "robot_21_seed9798",
+    "status": "ok",
+    "ssm": 0.2469371930764404,
+    "num_legs": 5,
+    "fwd_dist": -0.24622205644035028,
+    "lat_dist": 0.8668628854743524
+  },
+  {
+    "robot": "robot_22_seed2071",
+    "status": "ok",
+    "ssm": 0.286075877236501,
+    "num_legs": 6,
+    "fwd_dist": 0.9326873728602791,
+    "lat_dist": 0.8359270729264054
+  },
+  {
+    "robot": "robot_25_seed2613",
+    "status": "ok",
+    "ssm": 0.3708324192486572,
+    "num_legs": 5,
+    "fwd_dist": 0.22344496690525967,
+    "lat_dist": 0.49914187378918695
+  },
+  {
+    "robot": "robot_26_seed5727",
+    "status": "ok",
+    "ssm": 0.3358333995081928,
+    "num_legs": 10,
+    "fwd_dist": -1.9110767813841547,
+    "lat_dist": -2.351604406359571
+  },
+  {
+    "robot": "robot_27_seed5215",
+    "status": "ok",
+    "ssm": 0.4467528883117508,
+    "num_legs": 9,
+    "fwd_dist": 0.6642477780016884,
+    "lat_dist": -1.5645199732801944
+  },
+  {
+    "robot": "robot_28_seed2649",
+    "status": "ok",
+    "ssm": 0.07578595773045813,
+    "num_legs": 4,
+    "fwd_dist": 0.05055165475301723,
+    "lat_dist": 0.28217971288516985
+  },
+  {
+    "robot": "robot_29_seed3420",
+    "status": "ok",
+    "ssm": 0.16148130164586302,
+    "num_legs": 6,
+    "fwd_dist": 0.030783545052511643,
+    "lat_dist": 1.082099428471452
+  },
+  {
+    "robot": "robot_30_seed5370",
+    "status": "ok",
+    "ssm": 0.23417435142053686,
+    "num_legs": 8,
+    "fwd_dist": 5.4987921581390955,
+    "lat_dist": -1.9900489880967376
+  },
+  {
+    "robot": "robot_31_seed6025",
+    "status": "ok",
+    "ssm": 0.057936192515631604,
+    "num_legs": 6,
+    "fwd_dist": 0.03923601170949023,
+    "lat_dist": -0.11768438154032165
+  },
+  {
+    "robot": "robot_32_seed8535",
+    "status": "ok",
+    "ssm": 0.1093032616717734,
+    "num_legs": 4,
+    "fwd_dist": 0.48381710590986915,
+    "lat_dist": -0.5891166649365187
+  },
+  {
+    "robot": "robot_35_seed7635",
+    "status": "ok",
+    "ssm": 0.3097027472335328,
+    "num_legs": 8,
+    "fwd_dist": 1.6772430321181022,
+    "lat_dist": -2.311798056728535
+  },
+  {
+    "robot": "robot_36_seed937",
+    "status": "ok",
+    "ssm": 0.07583981534527999,
+    "num_legs": 8,
+    "fwd_dist": -0.025699720318266426,
+    "lat_dist": 0.1419426426376811
+  },
+  {
+    "robot": "robot_37_seed380",
+    "status": "ok",
+    "ssm": 0.1191449991389058,
+    "num_legs": 7,
+    "fwd_dist": 0.2679497628472174,
+    "lat_dist": -0.014235278578091579
+  },
+  {
+    "robot": "robot_38_seed8349",
+    "status": "ok",
+    "ssm": 0.07175714243608682,
+    "num_legs": 7,
+    "fwd_dist": 0.6002413034114444,
+    "lat_dist": -0.2807791070292189
+  },
+  {
+    "robot": "robot_39_seed116",
+    "status": "ok",
+    "ssm": 0.39630311484728237,
+    "num_legs": 5,
+    "fwd_dist": 0.20784837424370312,
+    "lat_dist": 0.012661176729179532
+  },
+  {
+    "robot": "robot_42_seed2783",
+    "status": "ok",
+    "ssm": 0.291644606424685,
+    "num_legs": 6,
+    "fwd_dist": 0.956313984866048,
+    "lat_dist": 2.6123651829596373
+  },
+  {
+    "robot": "robot_45_seed4350",
+    "status": "ok",
+    "ssm": 0.04943345158189465,
+    "num_legs": 7,
+    "fwd_dist": -0.09448811765855537,
+    "lat_dist": -0.037508338864137826
+  },
+  {
+    "robot": "robot_46_seed4949",
+    "status": "ok",
+    "ssm": 0.39150011920308436,
+    "num_legs": 9,
+    "fwd_dist": 0.05379116240160986,
+    "lat_dist": -1.1405236154634908
+  },
+  {
+    "robot": "robot_48_seed4767",
+    "status": "ok",
+    "ssm": 0.29904354463734956,
+    "num_legs": 8,
+    "fwd_dist": -1.757071400918411,
+    "lat_dist": 0.3366015189999197
+  },
+  {
+    "robot": "robot_51_seed4406",
+    "status": "ok",
+    "ssm": 0.33684096229526184,
+    "num_legs": 7,
+    "fwd_dist": 0.7203248563178752,
+    "lat_dist": -2.442677347207339
+  },
+  {
+    "robot": "robot_52_seed937",
+    "status": "ok",
+    "ssm": 0.07583981534527999,
+    "num_legs": 8,
+    "fwd_dist": 0.03366467911611641,
+    "lat_dist": 0.016127722680151918
+  },
+  {
+    "robot": "robot_53_seed1576",
+    "status": "ok",
+    "ssm": 0.12787992848609153,
+    "num_legs": 9,
+    "fwd_dist": 0.07614267803700756,
+    "lat_dist": 0.038367633713496815
+  },
+  {
+    "robot": "robot_54_seed9310",
+    "status": "ok",
+    "ssm": 0.27754243454157873,
+    "num_legs": 8,
+    "fwd_dist": -2.229437105892382,
+    "lat_dist": 0.6672053924762091
+  },
+  {
+    "robot": "robot_55_seed5141",
+    "status": "ok",
+    "ssm": 0.26829434407065145,
+    "num_legs": 5,
+    "fwd_dist": -1.3316741081780237,
+    "lat_dist": -0.13173242235856666
+  },
+  {
+    "robot": "robot_56_seed5748",
+    "status": "ok",
+    "ssm": 0.4388144108562582,
+    "num_legs": 10,
+    "fwd_dist": -1.2611122873417586,
+    "lat_dist": 1.417994879000688
+  },
+  {
+    "robot": "robot_57_seed8746",
+    "status": "ok",
+    "ssm": 0.035390012886865184,
+    "num_legs": 6,
+    "fwd_dist": -0.03340881467971608,
+    "lat_dist": -0.1701768657409877
+  },
+  {
+    "robot": "robot_58_seed9570",
+    "status": "ok",
+    "ssm": 0.33103727196559773,
+    "num_legs": 7,
+    "fwd_dist": 0.5170177428835756,
+    "lat_dist": 2.4525950076423935
+  },
+  {
+    "robot": "robot_60_seed7369",
+    "status": "ok",
+    "ssm": 0.23325169469792487,
+    "num_legs": 4,
+    "fwd_dist": 1.18480388108013,
+    "lat_dist": -0.4858032736594744
+  },
+  {
+    "robot": "robot_61_seed9411",
+    "status": "ok",
+    "ssm": 0.3648879127390725,
+    "num_legs": 7,
+    "fwd_dist": -1.5276056076895477,
+    "lat_dist": -0.21502046958486698
+  },
+  {
+    "robot": "robot_62_seed3571",
+    "status": "ok",
+    "ssm": 0.23077880513373156,
+    "num_legs": 4,
+    "fwd_dist": 0.2416491394441117,
+    "lat_dist": -0.5764151784643226
+  },
+  {
+    "robot": "robot_64_seed614",
+    "status": "ok",
+    "ssm": 0.46119856358357153,
+    "num_legs": 9,
+    "fwd_dist": 0.597653552460476,
+    "lat_dist": -2.966756968556254
+  },
+  {
+    "robot": "robot_65_seed2909",
+    "status": "ok",
+    "ssm": 0.2680085697900686,
+    "num_legs": 9,
+    "fwd_dist": -0.051220872698036955,
+    "lat_dist": -0.025701183157281808
+  },
+  {
+    "robot": "robot_66_seed3437",
+    "status": "ok",
+    "ssm": 0.0613691821885557,
+    "num_legs": 7,
+    "fwd_dist": 0.07092080003053593,
+    "lat_dist": 0.011306054348187145
+  },
+  {
+    "robot": "robot_67_seed5188",
+    "status": "ok",
+    "ssm": 0.14773934797423424,
+    "num_legs": 8,
+    "fwd_dist": -0.19949218064724417,
+    "lat_dist": 0.027889287238611928
+  },
+  {
+    "robot": "robot_68_seed4366",
+    "status": "ok",
+    "ssm": 0.12570838814506055,
+    "num_legs": 9,
+    "fwd_dist": 0.6192530111171691,
+    "lat_dist": 0.17970338084328735
+  },
+  {
+    "robot": "robot_69_seed1580",
+    "status": "ok",
+    "ssm": 0.0883367966096591,
+    "num_legs": 5,
+    "fwd_dist": -0.03930193289402699,
+    "lat_dist": -0.05051535395581478
+  },
+  {
+    "robot": "robot_70_seed5663",
+    "status": "ok",
+    "ssm": 0.31797285573673134,
+    "num_legs": 5,
+    "fwd_dist": 1.5248901988445407,
+    "lat_dist": -1.1439007601976792
+  },
+  {
+    "robot": "robot_71_seed4113",
+    "status": "ok",
+    "ssm": 0.181727181395043,
+    "num_legs": 8,
+    "fwd_dist": 1.8315300262421585,
+    "lat_dist": -0.005517558450869986
+  },
+  {
+    "robot": "robot_73_seed5064",
+    "status": "ok",
+    "ssm": 0.1238586791520489,
+    "num_legs": 7,
+    "fwd_dist": 2.3532875279220318,
+    "lat_dist": -0.9346268715276225
+  },
+  {
+    "robot": "robot_75_seed7432",
+    "status": "ok",
+    "ssm": 0.13772725411469383,
+    "num_legs": 5,
+    "fwd_dist": -0.024454213218796282,
+    "lat_dist": 0.05440450235934199
+  },
+  {
+    "robot": "robot_77_seed3724",
+    "status": "ok",
+    "ssm": 0.13640947180304572,
+    "num_legs": 9,
+    "fwd_dist": 0.04530886937605311,
+    "lat_dist": -0.09624936837681372
+  },
+  {
+    "robot": "robot_79_seed1204",
+    "status": "ok",
+    "ssm": 0.4465302063373384,
+    "num_legs": 8,
+    "fwd_dist": 0.23403374676012034,
+    "lat_dist": -2.5279153205639426
+  },
+  {
+    "robot": "robot_80_seed9920",
+    "status": "ok",
+    "ssm": 0.048585164101910765,
+    "num_legs": 6,
+    "fwd_dist": -0.15748428575605408,
+    "lat_dist": -0.3024958373916791
+  },
+  {
+    "robot": "robot_83_seed3916",
+    "status": "ok",
+    "ssm": 0.336982183879764,
+    "num_legs": 8,
+    "fwd_dist": 0.8633513375367537,
+    "lat_dist": -1.3971846873212805
+  },
+  {
+    "robot": "robot_84_seed8459",
+    "status": "ok",
+    "ssm": 0.2723107573924168,
+    "num_legs": 7,
+    "fwd_dist": -1.093970678168042,
+    "lat_dist": -1.4857579999309953
+  },
+  {
+    "robot": "robot_85_seed3917",
+    "status": "ok",
+    "ssm": 0.29254927153403765,
+    "num_legs": 8,
+    "fwd_dist": 1.0262568540579884,
+    "lat_dist": -1.1959026641516248
+  },
+  {
+    "robot": "robot_87_seed8875",
+    "status": "ok",
+    "ssm": 0.10305443104950995,
+    "num_legs": 10,
+    "fwd_dist": -0.18480686793269574,
+    "lat_dist": 3.2972245242036493
+  },
+  {
+    "robot": "robot_88_seed6370",
+    "status": "ok",
+    "ssm": 0.17854700020922198,
+    "num_legs": 9,
+    "fwd_dist": -0.48262759649943715,
+    "lat_dist": -0.4462559138584828
+  },
+  {
+    "robot": "robot_90_seed2321",
+    "status": "ok",
+    "ssm": 0.12172986098865851,
+    "num_legs": 8,
+    "fwd_dist": 0.07228620785270261,
+    "lat_dist": 0.03773592661713536
+  },
+  {
+    "robot": "robot_91_seed1767",
+    "status": "ok",
+    "ssm": 0.3685247605281836,
+    "num_legs": 8,
+    "fwd_dist": -1.9322926253837027,
+    "lat_dist": -2.8393950185703836
+  },
+  {
+    "robot": "robot_92_seed1972",
+    "status": "ok",
+    "ssm": 0.05900963360038164,
+    "num_legs": 10,
+    "fwd_dist": 0.11651901143226084,
+    "lat_dist": -2.812414229933861
+  },
+  {
+    "robot": "robot_93_seed8020",
+    "status": "ok",
+    "ssm": 0.09660197796888839,
+    "num_legs": 5,
+    "fwd_dist": 0.17677941794733587,
+    "lat_dist": -0.20992116171949354
+  },
+  {
+    "robot": "robot_94_seed4253",
+    "status": "ok",
+    "ssm": 0.2508434916846458,
+    "num_legs": 10,
+    "fwd_dist": 1.6176339906146286,
+    "lat_dist": 1.5001259799440703
+  },
+  {
+    "robot": "robot_95_seed6136",
+    "status": "ok",
+    "ssm": 0.05230045338810439,
+    "num_legs": 6,
+    "fwd_dist": 0.021403906845703546,
+    "lat_dist": 0.01090323106558318
+  },
+  {
+    "robot": "robot_97_seed9746",
+    "status": "ok",
+    "ssm": 0.1836594460221648,
+    "num_legs": 5,
+    "fwd_dist": -0.32697161677385356,
+    "lat_dist": 0.10988725527803705
+  },
+  {
+    "robot": "robot_98_seed7597",
+    "status": "ok",
+    "ssm": 0.16284888930769528,
+    "num_legs": 4,
+    "fwd_dist": -0.06458213634011511,
+    "lat_dist": -0.9463066656827
+  },
+  {
+    "robot": "robot_99_seed7022",
+    "status": "ok",
+    "ssm": 0.3246921980725157,
+    "num_legs": 6,
+    "fwd_dist": -1.7919292806901779,
+    "lat_dist": -0.5642935783700924
+  },
+  {
+    "robot": "robot_100_seed7080",
+    "status": "ok",
+    "ssm": 0.21392012443742492,
+    "num_legs": 5,
+    "fwd_dist": 1.377975266259576,
+    "lat_dist": 0.8497037093516666
+  },
+  {
+    "robot": "robot_101_seed9118",
+    "status": "ok",
+    "ssm": 0.04328974704917736,
+    "num_legs": 7,
+    "fwd_dist": -0.0018389348772041478,
+    "lat_dist": -0.02388996623686573
+  },
+  {
+    "robot": "robot_105_seed12",
+    "status": "ok",
+    "ssm": 0.12790446909515965,
+    "num_legs": 8,
+    "fwd_dist": 0.7486017081218304,
+    "lat_dist": -0.7028248388345383
+  },
+  {
+    "robot": "robot_107_seed6472",
+    "status": "ok",
+    "ssm": 0.10227267126454033,
+    "num_legs": 4,
+    "fwd_dist": 0.517417712213935,
+    "lat_dist": -0.6282182877571827
+  },
+  {
+    "robot": "robot_108_seed8876",
+    "status": "ok",
+    "ssm": 0.2959700119685049,
+    "num_legs": 7,
+    "fwd_dist": -1.1276503189790554,
+    "lat_dist": -1.0766237399341376
+  },
+  {
+    "robot": "robot_109_seed7269",
+    "status": "ok",
+    "ssm": 0.23512191529361637,
+    "num_legs": 10,
+    "fwd_dist": 0.28459408610354764,
+    "lat_dist": -2.2480519564078745
+  },
+  {
+    "robot": "robot_110_seed2654",
+    "status": "ok",
+    "ssm": 0.11237475962979619,
+    "num_legs": 5,
+    "fwd_dist": 0.20561810082840976,
+    "lat_dist": -0.04510472985157869
+  },
+  {
+    "robot": "robot_112_seed6265",
+    "status": "ok",
+    "ssm": 0.26277067859808345,
+    "num_legs": 9,
+    "fwd_dist": 0.07695926763499067,
+    "lat_dist": -1.0522585161615206
+  },
+  {
+    "robot": "robot_116_seed8045",
+    "status": "ok",
+    "ssm": 0.13692240419105536,
+    "num_legs": 6,
+    "fwd_dist": 0.14624242234605056,
+    "lat_dist": 0.32371339474633254
+  },
+  {
+    "robot": "robot_117_seed4156",
+    "status": "ok",
+    "ssm": 0.0389561332042542,
+    "num_legs": 7,
+    "fwd_dist": -0.341681970173535,
+    "lat_dist": -0.19205595103958925
+  },
+  {
+    "robot": "robot_118_seed4794",
+    "status": "ok",
+    "ssm": 0.38774927449578966,
+    "num_legs": 10,
+    "fwd_dist": -0.6148500024454469,
+    "lat_dist": -0.6840919041043226
+  },
+  {
+    "robot": "robot_119_seed6638",
+    "status": "ok",
+    "ssm": 0.13257975941434455,
+    "num_legs": 10,
+    "fwd_dist": 0.7515990891853787,
+    "lat_dist": -0.2593845920889695
+  },
+  {
+    "robot": "robot_121_seed8368",
+    "status": "ok",
+    "ssm": 0.2494669026377395,
+    "num_legs": 7,
+    "fwd_dist": 0.04795428558242827,
+    "lat_dist": 2.094220844005314
+  },
+  {
+    "robot": "robot_122_seed1418",
+    "status": "ok",
+    "ssm": 0.2895772562527385,
+    "num_legs": 7,
+    "fwd_dist": -1.3598420669808449,
+    "lat_dist": 0.7610943677452393
+  },
+  {
+    "robot": "robot_123_seed2197",
+    "status": "ok",
+    "ssm": 0.07890144865688437,
+    "num_legs": 7,
+    "fwd_dist": 0.03102758818296457,
+    "lat_dist": 0.059683587052147026
+  },
+  {
+    "robot": "robot_125_seed5217",
+    "status": "ok",
+    "ssm": 0.04402377005095866,
+    "num_legs": 8,
+    "fwd_dist": -0.4753130400061313,
+    "lat_dist": 1.6196313927821229
+  },
+  {
+    "robot": "robot_126_seed1624",
+    "status": "ok",
+    "ssm": 0.37543985353903975,
+    "num_legs": 5,
+    "fwd_dist": 2.21700195946981,
+    "lat_dist": 0.546786798360425
+  },
+  {
+    "robot": "robot_127_seed5769",
+    "status": "ok",
+    "ssm": 0.29767690723415924,
+    "num_legs": 9,
+    "fwd_dist": 1.3938444063606863,
+    "lat_dist": 0.3277148127054789
+  },
+  {
+    "robot": "robot_129_seed6222",
+    "status": "ok",
+    "ssm": 0.27870544332629155,
+    "num_legs": 9,
+    "fwd_dist": 0.0427651990191148,
+    "lat_dist": -2.541857651444778
+  },
+  {
+    "robot": "robot_130_seed3106",
+    "status": "ok",
+    "ssm": 0.03240407456498347,
+    "num_legs": 10,
+    "fwd_dist": 0.3032738429648472,
+    "lat_dist": 0.12983025975267556
+  },
+  {
+    "robot": "robot_132_seed2902",
+    "status": "ok",
+    "ssm": 0.30563379922716416,
+    "num_legs": 6,
+    "fwd_dist": 1.4704452946422124,
+    "lat_dist": 2.6787694053724533
+  },
+  {
+    "robot": "robot_133_seed1527",
+    "status": "ok",
+    "ssm": 0.2655638534717302,
+    "num_legs": 5,
+    "fwd_dist": 2.003483005326142,
+    "lat_dist": -0.5069588719957774
+  },
+  {
+    "robot": "robot_134_seed7152",
+    "status": "ok",
+    "ssm": 0.04062298549554734,
+    "num_legs": 10,
+    "fwd_dist": -0.0802359673815034,
+    "lat_dist": -0.07896007119143468
+  },
+  {
+    "robot": "robot_135_seed3424",
+    "status": "ok",
+    "ssm": 0.2975095468993158,
+    "num_legs": 5,
+    "fwd_dist": 1.3037215388415988,
+    "lat_dist": 0.6370148532449292
+  },
+  {
+    "robot": "robot_136_seed9037",
+    "status": "ok",
+    "ssm": 0.3535587100977326,
+    "num_legs": 10,
+    "fwd_dist": -2.0846002570983417,
+    "lat_dist": -1.4119587208495308
+  },
+  {
+    "robot": "robot_137_seed1260",
+    "status": "ok",
+    "ssm": 0.04906215941763575,
+    "num_legs": 8,
+    "fwd_dist": 1.2267937948289225,
+    "lat_dist": 0.0784992783286535
+  },
+  {
+    "robot": "robot_138_seed9632",
+    "status": "ok",
+    "ssm": 0.30772425002871495,
+    "num_legs": 10,
+    "fwd_dist": -0.18027681983085164,
+    "lat_dist": -2.1697309931938564
+  },
+  {
+    "robot": "robot_139_seed7577",
+    "status": "ok",
+    "ssm": 0.048267599677775844,
+    "num_legs": 10,
+    "fwd_dist": 0.5340945872176656,
+    "lat_dist": 0.10956769452533771
+  },
+  {
+    "robot": "robot_141_seed9423",
+    "status": "ok",
+    "ssm": 0.16223416643078642,
+    "num_legs": 4,
+    "fwd_dist": 1.7494875652550428,
+    "lat_dist": 0.027877095515050063
+  },
+  {
+    "robot": "robot_142_seed7451",
+    "status": "ok",
+    "ssm": 0.3697554810733221,
+    "num_legs": 9,
+    "fwd_dist": 1.5183356598629871,
+    "lat_dist": 0.1958474470019685
+  },
+  {
+    "robot": "robot_143_seed3762",
+    "status": "ok",
+    "ssm": 0.3742119212331181,
+    "num_legs": 5,
+    "fwd_dist": 0.9036775668687734,
+    "lat_dist": 0.5343091221841298
+  },
+  {
+    "robot": "robot_144_seed4528",
+    "status": "ok",
+    "ssm": 0.0738281719650315,
+    "num_legs": 6,
+    "fwd_dist": 0.008418794905508665,
+    "lat_dist": 0.02814951009791642
+  },
+  {
+    "robot": "robot_145_seed3331",
+    "status": "ok",
+    "ssm": 0.1991502842888915,
+    "num_legs": 7,
+    "fwd_dist": 0.6327454617948725,
+    "lat_dist": 2.6431167874558765
+  },
+  {
+    "robot": "robot_146_seed1978",
+    "status": "ok",
+    "ssm": 0.08888782318849092,
+    "num_legs": 9,
+    "fwd_dist": 0.20989901102428238,
+    "lat_dist": 0.4300703229709811
+  },
+  {
+    "robot": "robot_147_seed3514",
+    "status": "ok",
+    "ssm": 0.2557932824974743,
+    "num_legs": 7,
+    "fwd_dist": 1.4502653463011757,
+    "lat_dist": 1.1302871845313354
+  },
+  {
+    "robot": "robot_150_seed5229",
+    "status": "ok",
+    "ssm": 0.1010659075830319,
+    "num_legs": 5,
+    "fwd_dist": -0.34197311224901367,
+    "lat_dist": 0.17530252700579035
+  },
+  {
+    "robot": "robot_151_seed3866",
+    "status": "ok",
+    "ssm": 0.15015282798236831,
+    "num_legs": 5,
+    "fwd_dist": 0.034741542624571936,
+    "lat_dist": 0.013232434645148032
+  },
+  {
+    "robot": "robot_152_seed9404",
+    "status": "ok",
+    "ssm": 0.09268832546937258,
+    "num_legs": 9,
+    "fwd_dist": 0.3566163443804636,
+    "lat_dist": -0.0026436726562486523
+  },
+  {
+    "robot": "robot_153_seed168",
+    "status": "ok",
+    "ssm": 0.2250621803659467,
+    "num_legs": 6,
+    "fwd_dist": 0.36223370781247705,
+    "lat_dist": 0.2956400771523036
+  },
+  {
+    "robot": "robot_157_seed9665",
+    "status": "ok",
+    "ssm": 0.38777379483285074,
+    "num_legs": 9,
+    "fwd_dist": 2.181196561744872,
+    "lat_dist": -3.0045453948079213
+  }
+]

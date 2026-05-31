@@ -32,6 +32,17 @@ def main():
     fwd   = fwd / max(float(np.linalg.norm(fwd)), 1e-9)
     lat   = np.array([-fwd[1], fwd[0]], dtype=float)
 
+    # Rotation matrix: world → display frame (forward = +Y, lateral = +X)
+    # R @ [world_x, world_y] = [lat_component, fwd_component]
+    R = np.array([[lat[0], lat[1]], [fwd[0], fwd[1]]], dtype=float)
+
+    def _rot(pts: np.ndarray) -> np.ndarray:
+        """World-XY → display-XY (lat, fwd)."""
+        pts = np.asarray(pts, dtype=float)
+        if pts.ndim == 1:
+            return R @ pts
+        return (R @ pts.T).T
+
     origin   = trail[0] if len(trail) > 0 else np.zeros(2)
     delta    = trail - origin
     fwd_vals = delta @ fwd
@@ -39,8 +50,9 @@ def main():
 
     total_fwd = float(fwd_vals[-1]) if len(fwd_vals) > 0 else 0.0
 
-    # Trunk polygon
-    trunk_poly = np.array(description.get("trunk_polygon_xy", []), dtype=float)
+    # Trunk polygon — rotate to display frame
+    trunk_poly_raw = np.array(description.get("trunk_polygon_xy", []), dtype=float)
+    trunk_poly = _rot(trunk_poly_raw) if len(trunk_poly_raw) >= 3 else trunk_poly_raw
 
     # Leg geometry
     foot_links = {int(lk["leg_id"]): lk for lk in description.get("links", [])
@@ -53,7 +65,7 @@ def main():
     # ── figure ──
     fig, ax = plt.subplots(figsize=(5, 10))
 
-    # 1. Robot outline (at origin)
+    # 1. Robot outline (at origin, rotated so forward = +Y)
     if len(trunk_poly) >= 3:
         poly_closed = np.vstack([trunk_poly, trunk_poly[0]])
         ax.fill(poly_closed[:, 0], poly_closed[:, 1],
@@ -61,20 +73,25 @@ def main():
         ax.plot(poly_closed[:, 0], poly_closed[:, 1],
                 "k-", lw=1.0, zorder=3)
 
-    # 2. Legs
+    # 2. Legs (rotated to display frame)
     for lid, foot_lk in foot_links.items():
-        foot_pos = np.asarray(foot_lk["default_world_origin"], dtype=float)[:2]
+        foot_pos = _rot(np.asarray(foot_lk["default_world_origin"], dtype=float)[:2])
         hip_lk   = hip_links.get(lid)
-        hip_pos  = (np.asarray(hip_lk["default_world_origin"], dtype=float)[:2]
+        hip_pos  = (_rot(np.asarray(hip_lk["default_world_origin"], dtype=float)[:2])
                     if hip_lk is not None else np.zeros(2))
         ax.plot([hip_pos[0], foot_pos[0]], [hip_pos[1], foot_pos[1]],
                 color="dimgray", lw=1.5, zorder=3)
         ax.plot(*foot_pos, "ko", ms=4, zorder=4)
 
+    # 2b. Forward direction arrow on robot body
+    arrow_len = 0.18
+    ax.annotate("", xy=(0.0, arrow_len), xytext=(0.0, 0.0),
+                arrowprops=dict(arrowstyle="->", color="blue", lw=1.5), zorder=6)
+
     # 3. Initial CoM marker
     ax.plot(0.0, 0.0, "r+", ms=10, mew=2, zorder=5, label="Initial CoM")
 
-    # 4. Commanded path (dashed blue, straight line forward)
+    # 4. Commanded path (dashed blue, straight line forward = +Y)
     cmd_len = max(total_fwd * 1.05, 0.3)
     ax.plot([0.0, 0.0], [0.0, cmd_len], "b--", lw=1.5,
             label="Commanded Path", zorder=6)

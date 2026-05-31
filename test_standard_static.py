@@ -47,6 +47,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--swing-ratio", type=float, default=0.50, help="Neutral swing joint ratio.")
     parser.add_argument("--auto-generate", action="store_true",
                         help="Regenerate the standard URDF if it is missing.")
+    parser.add_argument("--use-ik", action="store_true",
+                        help="Use Inverse Kinematics to calculate statically perfectly level feet.")
     return parser.parse_args()
 
 
@@ -99,14 +101,23 @@ def build_joint_target_map(
     stance_lift_ratio: float,
     stance_drop_ratio: float,
     swing_ratio: float,
-) -> Dict[int, float]:
+) -> Tuple[Dict[int, float], Dict]:
     joint_targets: Dict[int, float] = {}
     num_joints = p.getNumJoints(robot_id)
+    
+    lower_limits = []
+    upper_limits = []
+    joint_ranges = []
+    rest_poses = []
+    movable_joints = []
+    foot_links = []
+    
     for joint_index in range(num_joints):
         info = p.getJointInfo(robot_id, joint_index)
         name = info[1].decode("utf-8")
-        lower = float(info[8]) if math.isfinite(info[8]) else -0.5
-        upper = float(info[9]) if math.isfinite(info[9]) else 0.5
+        lower = float(info[8]) if math.isfinite(info[8]) else -1.0
+        upper = float(info[9]) if math.isfinite(info[9]) else 1.0
+        
         if upper <= lower:
             target = 0.0
         elif "_lift" in name:
@@ -117,10 +128,21 @@ def build_joint_target_map(
             target = lower + np.clip(swing_ratio, 0.0, 1.0) * (upper - lower)
         else:
             target = 0.5 * (lower + upper)
+            
         joint_targets[joint_index] = float(target)
-    return joint_targets
-
-
+        
+        if info[2] != p.JOINT_FIXED:
+            movable_joints.append(joint_index)
+            lower_limits.append(lower)
+            upper_limits.append(upper)
+            joint_ranges.append(abs(upper - lower))
+            rest_poses.append(target)
+            
+        if 'drop' in name:
+            foot_links.append(joint_index)
+                
+    joint_data = {'movable_joints': movable_joints, 'foot_links': foot_links, 'lower': lower_limits, 'upper': upper_limits, 'ranges': joint_ranges, 'rest': rest_poses}
+    return joint_targets, joint_data
 def apply_joint_targets(robot_id: int, joint_targets: Dict[int, float], stiffness: float,
                         damping: float, effort: float) -> None:
     num_joints = p.getNumJoints(robot_id)
@@ -191,12 +213,17 @@ def main() -> int:
         print(f"[ERROR] Failed to load URDF: {args.urdf}")
         return 1
 
-    joint_targets = build_joint_target_map(
+    joint_targets, joint_data = build_joint_target_map(
         robot_id,
         stance_lift_ratio=args.stance_lift_ratio,
         stance_drop_ratio=args.stance_drop_ratio,
         swing_ratio=args.swing_ratio,
     )
+    
+    # Pre-snap joints mathematically to avoid violent initial drop
+    for j_i, tgt in joint_targets.items():
+        p.resetJointState(robot_id, j_i, tgt)
+
     apply_joint_targets(robot_id, joint_targets, args.stiffness, args.damping, args.effort)
 
     joint_map = joint_name_map(robot_id)
@@ -218,6 +245,14 @@ def main() -> int:
             cameraTargetPosition=[0.0, 0.0, 0.25],
         )
 
+    import numpy as np
+
+    end_eff_targets = []
+    if args.use_ik:
+        for link in joint_data['foot_links']:
+            pos = p.getLinkState(robot_id, link)[0]
+            end_eff_targets.append([pos[0], pos[1], 0.0])
+
     roll_samples: List[float] = []
     pitch_samples: List[float] = []
     base_z_samples: List[float] = []
@@ -225,6 +260,27 @@ def main() -> int:
 
     print(f"[HOLD] Stabilizing for {args.hold_steps} steps ...")
     for step in range(max(args.steps, 1)):
+        if args.use_ik and step > 10:
+            base_pos = p.getBasePositionAndOrientation(robot_id)[0]
+            z_err = float(args.body_height) - base_pos[2]
+            for idx, link in enumerate(joint_data['foot_links']):
+                cur_pos = p.getLinkState(robot_id, link)[0]
+                end_eff_targets[idx][0] = cur_pos[0]
+                end_eff_targets[idx][1] = cur_pos[1]
+                end_eff_targets[idx][2] = np.clip(-z_err * 0.5, -0.05, 0.05)
+                
+            ik_angles = p.calculateInverseKinematics2(
+                robot_id, joint_data['foot_links'], end_eff_targets,
+                lowerLimits=joint_data['lower'],
+                upperLimits=joint_data['upper'],
+                jointRanges=joint_data['ranges'],
+                restPoses=joint_data['rest'],
+                maxNumIterations=20,
+                residualThreshold=1e-4
+            )
+            for i, m in enumerate(joint_data['movable_joints']):
+                joint_targets[m] = float(ik_angles[i])
+       
         apply_joint_targets(robot_id, joint_targets, args.stiffness, args.damping, args.effort)
         p.stepSimulation()
 
@@ -269,7 +325,6 @@ def main() -> int:
             if (
                 (ord("q") in keys and keys[ord("q")] & p.KEY_WAS_TRIGGERED)
                 or (ord("Q") in keys and keys[ord("Q")] & p.KEY_WAS_TRIGGERED)
-                or (p.B3G_ESCAPE in keys and keys[p.B3G_ESCAPE] & p.KEY_WAS_TRIGGERED)
             ):
                 break
             time.sleep(0.05)

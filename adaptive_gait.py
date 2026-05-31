@@ -100,6 +100,7 @@ def _ensure_ccw(polygon_xy: np.ndarray) -> np.ndarray:
 def compute_adaptive_plan(
     description: Dict,
     state: Optional[Dict] = None,
+    forced_axis: Optional[List[float]] = None,
 ) -> Dict:
     """Compute virtual forward axis, heading direction, leg groups, and gait topology.
 
@@ -253,42 +254,62 @@ def compute_adaptive_plan(
 
     # ---- Phase-1 torque-aware scoring of ±axis -------------------------------
     def _build_default_swing_vector(leg_id: int) -> np.ndarray:
-        """Auto-generate a swing vector for a leg without an explicit one.
+        """Return the swing vector for this leg for plan output (uses final axis).
 
-        Uses the true kinematic drive direction: when the swing joint rotates,
-        the foot moves tangent to the arc centred at the hip.  The vector
-        magnitude equals the hip→foot reach (moment arm), so longer legs
-        contribute proportionally more in _score_direction.
-
-        Convention: the returned vector points in the direction the foot moves
-        during the forward-swing half-cycle (sin > 0).  During stance the body
-        is pushed in the *same* direction (foot fixed → body advances).
+        This is kept for backward compatibility (plan["swing_vector"] field).
+        Direction scoring uses _gait_swing_dir() instead.
         """
         hip = hip_xy.get(leg_id)
         foot = foot_xy.get(leg_id)
         if hip is None or foot is None:
             return np.array([0.0, 0.0], dtype=float)
-
-        # Hip→foot vector = moment arm of swing joint
         hip_to_foot = foot - hip
         reach = float(np.linalg.norm(hip_to_foot))
         if reach < EPS:
             return np.array([0.0, 0.0], dtype=float)
-
-        # Foot velocity direction when swing joint rotates CCW:
-        #   rotate hip_to_foot by 90° CCW → [-dy, dx]
-        foot_vel_dir = np.array([-hip_to_foot[1], hip_to_foot[0]], dtype=float) / reach
-
-        # Choose rotation sense so that the foot sweeps forward (dot with
-        # body→foot outward direction > 0 for the foot to go forward).
-        # If foot_vel_dir already points in the forward half-plane, keep it;
-        # otherwise flip.  We use the centroid-to-foot outward radial as proxy.
         outward = foot - cos_xy
+        foot_vel_dir = np.array([-hip_to_foot[1], hip_to_foot[0]], dtype=float) / reach
         if float(np.dot(foot_vel_dir, outward)) < 0.0:
             foot_vel_dir = -foot_vel_dir
-
-        # Scale by reach so longer legs carry more weight in the score
         return foot_vel_dir * reach
+
+    def _gait_swing_dir(leg_id: int, direction: np.ndarray) -> np.ndarray:
+        """Return the foot velocity direction during the forward-swing half-cycle
+        (sin > 0) using the **same dsign convention** as the gait execution in
+        batch_test.py.
+
+        Why this is correct
+        -------------------
+        The gait chooses dsign based on whether the foot is to the left or right
+        of the candidate forward axis:
+            lat = rotate_CCW(direction)
+            dsign = -1 if dot(foot, lat) > 0 else +1
+
+        dsign > 0 → CCW rotation: foot_vel = [-h2f_y, +h2f_x]
+        dsign < 0 → CW  rotation: foot_vel = [+h2f_y, -h2f_x]
+
+        This ensures ALL correctly-placed legs have a positive projection onto
+        the true forward direction (both left and right legs conspire to push the
+        body forward together).  The old "outward" heuristic failed for diagonal
+        legs because CCW and outward are approximately perpendicular for any
+        radial leg, so the flip condition never triggered reliably.
+        """
+        hip = hip_xy.get(leg_id)
+        foot = foot_xy.get(leg_id)
+        if hip is None or foot is None:
+            return np.array([0.0, 0.0], dtype=float)
+        h2f = foot - hip
+        reach = float(np.linalg.norm(h2f))
+        if reach < EPS:
+            return np.array([0.0, 0.0], dtype=float)
+        # left direction for this candidate
+        lat_dir = np.array([-direction[1], direction[0]], dtype=float)
+        lat_p = float(np.dot(foot, lat_dir))
+        dsign = -1.0 if lat_p > 0.0 else 1.0
+        if dsign > 0:
+            return np.array([-h2f[1],  h2f[0]], dtype=float)   # CCW
+        else:
+            return np.array([ h2f[1], -h2f[0]], dtype=float)   # CW
 
     user_swings = state.get("swing_vectors", {})
     state_phases_legs = state.get("phases", {})
@@ -302,7 +323,7 @@ def compute_adaptive_plan(
             if swing_raw is not None:
                 v = np.asarray(swing_raw, dtype=float)[:2].copy()
             else:
-                v = _build_default_swing_vector(leg_id)
+                v = _gait_swing_dir(leg_id, direction)
             v_norm = float(np.linalg.norm(v))
             if v_norm < EPS:
                 continue
@@ -335,20 +356,73 @@ def compute_adaptive_plan(
             eccentricity = abs(com_lat - corridor_center)
             score -= eccentricity * 0.5
 
+        # Lateral leg distribution balance penalty.
+        # When most legs fall on one side of the forward axis the alternating gait
+        # cannot achieve zero net yaw regardless of amplitude correction.
+        # Penalise the normalised lateral first-moment of foot positions:
+        #   moment = sum(dot(foot_i, lat)) / N_active
+        # For a symmetric arrangement this is 0; for a 6:2 split it is large.
+        # Weight is strong (>> yaw torque weight) so a balanced direction always
+        # beats an unbalanced one with higher raw thrust.
+        _balance_legs = [lid for lid in foot_xy if lid not in missing_ids and lid not in locked_ids]
+        if _balance_legs:
+            _lat_moment = sum(float(np.dot(foot_xy[lid], lat_axis)) for lid in _balance_legs)
+            _lat_moment_norm = _lat_moment / len(_balance_legs)
+            LATERAL_BALANCE_WEIGHT = 3.0
+            score -= LATERAL_BALANCE_WEIGHT * abs(_lat_moment_norm)
+
+        # Yaw torque balance penalty — robots move straight only when net yaw is near zero.
+        # For each driving leg, the yaw torque about the COM is:
+        #   τ_i = thrust_i × yaw_lever_i,  yaw_lever_i = cross2d(r_i, direction)
+        # where r_i = foot_i − COM.  Penalise the absolute value of the sum.
+        net_yaw_torque = 0.0
+        for leg_id, pos in foot_xy.items():
+            if leg_id in missing_ids or leg_id in locked_ids:
+                continue
+            swing_raw = user_swings.get(str(leg_id), None)
+            if swing_raw is not None:
+                sv = np.asarray(swing_raw, dtype=float)[:2].copy()
+            else:
+                sv = _gait_swing_dir(leg_id, direction)
+            v_proj = float(np.dot(sv, direction))
+            if v_proj <= 0.0:
+                continue
+            phase = state_phases_legs.get(str(leg_id), "")
+            if phase in ("swing", "lift", "drop"):
+                pg = 1.15
+            elif phase == "stance":
+                pg = 0.75
+            else:
+                pg = 1.0
+            delta = swing_ranges.get(leg_id, 0.0)
+            rg = 1.0 + min(delta, 1.2)
+            r = pos - projected_com_xy
+            yaw_lever = float(r[0] * direction[1] - r[1] * direction[0])
+            net_yaw_torque += v_proj * yaw_lever * pg * rg
+        # Weight: light enough to avoid false direction flips (dynamic probe corrects residual yaw).
+        # Secondary to forward thrust — only tips close-scoring candidates.
+        YAW_BALANCE_WEIGHT = 0.8
+        score -= YAW_BALANCE_WEIGHT * abs(net_yaw_torque)
+
         return score
 
     pos_score = _score_direction(major_axis)  # for report only
     neg_score = _score_direction(-major_axis)  # for report only
 
-    # Evaluate all 4 candidate directions and pick the best
-    _X_PRIOR = 0.04
-    best_score = -1e18
-    final_axis = major_axis.copy()
-    for cand in candidate_axes:
-        s = _score_direction(cand) + _X_PRIOR * float(np.dot(cand, [1.0, 0.0]))
-        if s > best_score:
-            best_score = s
-            final_axis = cand.copy()
+    # Evaluate all 4 candidate directions and pick the best, or use forced axis.
+    if forced_axis is not None:
+        # External caller (e.g. iterative optimizer) supplies the axis directly.
+        final_axis = _unit(np.asarray(forced_axis[:2], dtype=float))
+        best_score = _score_direction(final_axis)
+    else:
+        _X_PRIOR = 0.04
+        best_score = -1e18
+        final_axis = major_axis.copy()
+        for cand in candidate_axes:
+            s = _score_direction(cand) + _X_PRIOR * float(np.dot(cand, [1.0, 0.0]))
+            if s > best_score:
+                best_score = s
+                final_axis = cand.copy()
 
     drive_resultant = final_axis * max(pos_score, neg_score)
 
@@ -569,6 +643,55 @@ def compute_adaptive_plan(
             grp.remove(leg_to_demote)
             group_c.append(leg_to_demote)
 
+    # ---- Yaw torque compensation via per-leg stride amplitude scaling -------
+    # Physics: when leg i is in stance the reaction force on the body points along
+    # final_axis with magnitude ∝ stride_amplitude_i.  The yaw torque about the
+    # COM is  τ_i = stride_i × ψ_i  where the "yaw lever" for leg i is:
+    #   ψ_i = swing_proj_i × cross2d(r_i, final_axis)
+    #       r_i = foot_i − projected_com_xy
+    # Net yaw = Σ ψ_i (with unit amplitudes).
+    #
+    # Least-squares correction: minimise Σ(s_i − 1)² s.t. Σ s_i ψ_i = 0
+    #   → s_i = 1 − λψ_i,   λ = (Σ ψ_i) / (Σ ψ_i²)
+    #
+    # Then the corrected stride amplitude is clamped to [0.10, 0.85].
+    # YAW_COMP_GAIN ∈ [0,1] blends between no correction (0) and full correction (1).
+    YAW_COMP_GAIN    = 0.50   # conservative static correction; dynamic probe handles the rest
+    YAW_COMP_MAX_ADJ = 0.30   # maximum ±adjustment fraction (±30 % of base amplitude)
+
+    # Per-leg yaw lever: ψ_i = swing_proj_i × cross2d(r_i, final_axis)
+    yaw_levers_by_leg: Dict[int, float] = {}
+    psi_by_leg: Dict[int, float] = {}
+    for lid in active_legs:
+        r = foot_xy[lid] - projected_com_xy
+        yaw_lever = float(r[0] * final_axis[1] - r[1] * final_axis[0])
+        yaw_levers_by_leg[lid] = yaw_lever
+        psi_by_leg[lid] = swing_projections.get(lid, 0.0) * yaw_lever
+
+    net_yaw_nominal = sum(psi_by_leg.values())  # with all s_i = 1
+    denom_psi = sum(w * w for w in psi_by_leg.values())
+
+    if denom_psi > EPS:
+        lam = YAW_COMP_GAIN * net_yaw_nominal / denom_psi
+        for lid in active_legs:
+            s_raw = 1.0 - lam * psi_by_leg[lid]
+            s_clamped = float(np.clip(s_raw,
+                                      1.0 - YAW_COMP_MAX_ADJ,
+                                      1.0 + YAW_COMP_MAX_ADJ))
+            base_amp = per_leg_stride_amplitudes.get(lid, 0.5)
+            per_leg_stride_amplitudes[lid] = float(np.clip(base_amp * s_clamped, 0.10, 0.85))
+        # net yaw after correction: Σ ψ_i × s_i  ≈ 0 by construction
+        net_yaw_corrected = sum(
+            psi_by_leg[lid] * per_leg_stride_amplitudes[lid]
+            for lid in active_legs
+        )
+        _initial_amps = {lid: (1.0 - lam * psi_by_leg[lid]) for lid in active_legs}
+        _max_adj = max(abs(1.0 - _initial_amps[lid]) for lid in active_legs)
+        print(f"[YawComp] net_yaw_nominal={net_yaw_nominal:.4f}  λ={lam:.4f}  "
+              f"max_adj={_max_adj:.3f}")
+    else:
+        net_yaw_corrected = net_yaw_nominal
+
     # ---- CPG coupling matrix (geometry-aware) --------------------------------
     cpg_cfg = state.get("cpg", {}) if isinstance(state.get("cpg", {}), dict) else {}
     freq_hz = float(cpg_cfg.get("frequency_hz", 0.85))
@@ -659,6 +782,18 @@ def compute_adaptive_plan(
         "planned_swings": planned_swings,
         "support_leg_ids": support_ids,
         "near_stance_leg_ids": near_stance_ids,
+        "yaw_balance": {
+            # net_yaw_nominal: net yaw torque before amplitude correction (unit amplitudes).
+            # Values near 0 mean naturally balanced; large values indicate asymmetry.
+            "net_yaw_nominal": float(net_yaw_nominal),
+            # net_yaw_corrected: estimated residual after amplitude correction.
+            "net_yaw_corrected": float(net_yaw_corrected),
+            # per-leg yaw lever ψ_i = swing_proj_i × cross2d(r_i, final_axis).
+            # Positive = foot is on the left of the forward line (adds CCW yaw when thrust).
+            # Negative = foot is on the right (adds CW yaw when thrust).
+            "psi_by_leg": {str(lid): float(psi_by_leg.get(lid, 0.0)) for lid in active_legs},
+            "yaw_levers": {str(lid): float(yaw_levers_by_leg.get(lid, 0.0)) for lid in active_legs},
+        },
         "cpg": {
             "active_leg_ids": active_legs,
             "phase_offsets": leg_phase_offsets,

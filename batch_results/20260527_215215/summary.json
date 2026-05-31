@@ -1,0 +1,366 @@
+[
+  {
+    "robot": "robot_ref_standard",
+    "status": "ok",
+    "ssm": 0.5800362200879557,
+    "num_legs": 6,
+    "fwd_dist": 2.5593154616653937,
+    "lat_dist": -0.28400440793482873
+  },
+  {
+    "robot": "robot_00_seed7",
+    "status": "ok",
+    "ssm": 0.0947959335871471,
+    "num_legs": 10,
+    "fwd_dist": -1.2803078120534216e-07,
+    "lat_dist": -1.0484084195614356e-06
+  },
+  {
+    "robot": "robot_01_seed42",
+    "status": "ok",
+    "ssm": 0.17632042982615906,
+    "num_legs": 4,
+    "fwd_dist": -1.851783338154279,
+    "lat_dist": 0.7595083476299312
+  },
+  {
+    "robot": "robot_02_seed137",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_03_seed256",
+    "status": "ok",
+    "ssm": 0.13108042522035362,
+    "num_legs": 7,
+    "fwd_dist": -2.808909766183088,
+    "lat_dist": -0.030478134011661842
+  },
+  {
+    "robot": "robot_04_seed512",
+    "status": "ok",
+    "ssm": 0.3908769322327111,
+    "num_legs": 6,
+    "fwd_dist": -1.788335221004639,
+    "lat_dist": 2.2639234725059687
+  },
+  {
+    "robot": "robot_05_seed4301",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_06_seed973",
+    "status": "ok",
+    "ssm": 0.0303292048148726,
+    "num_legs": 5,
+    "fwd_dist": -1.6894962809159816e-06,
+    "lat_dist": -3.465715573251595e-07
+  },
+  {
+    "robot": "robot_07_seed6160",
+    "status": "ok",
+    "ssm": 0.2811616235020984,
+    "num_legs": 9,
+    "fwd_dist": -0.5723113768008334,
+    "lat_dist": -0.2040956452181489
+  },
+  {
+    "robot": "robot_08_seed3301",
+    "status": "ok",
+    "ssm": 0.2296581871175899,
+    "num_legs": 5,
+    "fwd_dist": -0.8994977098872,
+    "lat_dist": -3.952029243831787
+  },
+  {
+    "robot": "robot_09_seed2626",
+    "status": "ok",
+    "ssm": 0.3462356796613597,
+    "num_legs": 9,
+    "fwd_dist": -2.0715059786322874,
+    "lat_dist": -0.76525152837558
+  },
+  {
+    "robot": "robot_10_seed4404",
+    "status": "ok",
+    "ssm": 0.3379631843788093,
+    "num_legs": 4,
+    "fwd_dist": -2.3088068490109785,
+    "lat_dist": 0.12369739719231387
+  },
+  {
+    "robot": "robot_11_seed1087",
+    "status": "ok",
+    "ssm": 0.18315334738491929,
+    "num_legs": 7,
+    "fwd_dist": -0.0562854191807531,
+    "lat_dist": -0.09954391990303708
+  },
+  {
+    "robot": "robot_12_seed1835",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_13_seed2494",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_14_seed6023",
+    "status": "ok",
+    "ssm": 0.0628093083984415,
+    "num_legs": 5,
+    "fwd_dist": 6.73441270261582e-07,
+    "lat_dist": -1.051174588870169e-07
+  },
+  {
+    "robot": "robot_15_seed9160",
+    "status": "ok",
+    "ssm": 0.1678201788572691,
+    "num_legs": 7,
+    "fwd_dist": 0.6387220151430789,
+    "lat_dist": 0.37389626752604765
+  },
+  {
+    "robot": "robot_16_seed6635",
+    "status": "ok",
+    "ssm": 0.15131457364157547,
+    "num_legs": 7,
+    "fwd_dist": 0.9044152246683289,
+    "lat_dist": -0.08137934726196307
+  },
+  {
+    "robot": "robot_17_seed589",
+    "status": "ok",
+    "ssm": 0.0430400891787411,
+    "num_legs": 7,
+    "fwd_dist": -0.00022997502763854122,
+    "lat_dist": -2.6795732324873157e-05
+  },
+  {
+    "robot": "robot_18_seed2504",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_19_seed4790",
+    "status": "ok",
+    "ssm": 0.09874074723996648,
+    "num_legs": 8,
+    "fwd_dist": 0.2344554674231524,
+    "lat_dist": -0.003900627686320386
+  },
+  {
+    "robot": "robot_20_seed4393",
+    "status": "ok",
+    "ssm": 0.14621239044043122,
+    "num_legs": 7,
+    "fwd_dist": -0.14348327053977722,
+    "lat_dist": 0.355065743130323
+  },
+  {
+    "robot": "robot_21_seed105",
+    "status": "ok",
+    "ssm": 0.023439581712095026,
+    "num_legs": 5,
+    "fwd_dist": 4.621021206969661e-07,
+    "lat_dist": -5.226694979076503e-07
+  },
+  {
+    "robot": "robot_22_seed1486",
+    "status": "ok",
+    "ssm": 0.10253502109646957,
+    "num_legs": 5,
+    "fwd_dist": 0.21920690307668475,
+    "lat_dist": 0.052844158311606895
+  },
+  {
+    "robot": "robot_23_seed1797",
+    "status": "ok",
+    "ssm": 0.297943718744517,
+    "num_legs": 7,
+    "fwd_dist": 1.2824262687412835,
+    "lat_dist": -0.4416002550903676
+  },
+  {
+    "robot": "robot_24_seed9216",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_25_seed5679",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_26_seed1220",
+    "status": "ok",
+    "ssm": -0.10367827069013279,
+    "num_legs": 7,
+    "fwd_dist": 0.06177296286987142,
+    "lat_dist": -0.022177943897015412
+  },
+  {
+    "robot": "robot_27_seed5635",
+    "status": "ok",
+    "ssm": 0.1456417252122176,
+    "num_legs": 9,
+    "fwd_dist": 0.21888823398784485,
+    "lat_dist": -0.8941872553227015
+  },
+  {
+    "robot": "robot_28_seed7479",
+    "status": "ok",
+    "ssm": 0.11115837021779114,
+    "num_legs": 7,
+    "fwd_dist": 0.770121796191956,
+    "lat_dist": -0.33975432083495183
+  },
+  {
+    "robot": "robot_29_seed6771",
+    "status": "ok",
+    "ssm": 0.3659671639978463,
+    "num_legs": 9,
+    "fwd_dist": -0.8790438824698144,
+    "lat_dist": 3.753791987462746
+  },
+  {
+    "robot": "robot_30_seed1506",
+    "status": "ok",
+    "ssm": 0.11175088495514268,
+    "num_legs": 6,
+    "fwd_dist": 0.09087126736386966,
+    "lat_dist": 0.03494936590359368
+  },
+  {
+    "robot": "robot_31_seed1496",
+    "status": "ok",
+    "ssm": 0.19496926526098995,
+    "num_legs": 6,
+    "fwd_dist": 0.46536932407502507,
+    "lat_dist": -0.18026863389152303
+  },
+  {
+    "robot": "robot_32_seed2633",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_33_seed6322",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_34_seed2072",
+    "status": "ok",
+    "ssm": -0.05288137036044586,
+    "num_legs": 8,
+    "fwd_dist": 0.5649535021175878,
+    "lat_dist": 0.5569335141106828
+  },
+  {
+    "robot": "robot_35_seed4501",
+    "status": "ok",
+    "ssm": 0.2746167932136921,
+    "num_legs": 9,
+    "fwd_dist": -0.03873461376243492,
+    "lat_dist": -4.839960548724692
+  },
+  {
+    "robot": "robot_36_seed7092",
+    "status": "ok",
+    "ssm": 0.02260505432337262,
+    "num_legs": 5,
+    "fwd_dist": 3.3406286770135195e-07,
+    "lat_dist": 3.030682591194746e-07
+  },
+  {
+    "robot": "robot_37_seed8125",
+    "status": "gen_failed"
+  },
+  {
+    "robot": "robot_38_seed342",
+    "status": "ok",
+    "ssm": 0.07184053687431458,
+    "num_legs": 9,
+    "fwd_dist": 0.10251982038350793,
+    "lat_dist": 0.008129553902840515
+  },
+  {
+    "robot": "robot_39_seed1788",
+    "status": "ok",
+    "ssm": 0.05169023013042601,
+    "num_legs": 5,
+    "fwd_dist": 0.4776517916115655,
+    "lat_dist": 0.1967796994894974
+  },
+  {
+    "robot": "robot_40_seed5386",
+    "status": "ok",
+    "ssm": 0.0829225600733509,
+    "num_legs": 6,
+    "fwd_dist": 0.6505304507009066,
+    "lat_dist": 0.07658564103496018
+  },
+  {
+    "robot": "robot_41_seed2440",
+    "status": "ok",
+    "ssm": 0.37546187310730933,
+    "num_legs": 8,
+    "fwd_dist": -2.1974207254503626,
+    "lat_dist": 0.061379833817220876
+  },
+  {
+    "robot": "robot_42_seed3366",
+    "status": "ok",
+    "ssm": 0.11044593162984358,
+    "num_legs": 8,
+    "fwd_dist": 0.33703740569047413,
+    "lat_dist": -0.5996503077417115
+  },
+  {
+    "robot": "robot_43_seed9090",
+    "status": "ok",
+    "ssm": 0.11486063418087379,
+    "num_legs": 7,
+    "fwd_dist": -0.09960844097417818,
+    "lat_dist": 1.3564245973064422
+  },
+  {
+    "robot": "robot_44_seed4893",
+    "status": "ok",
+    "ssm": 0.3278265510571641,
+    "num_legs": 5,
+    "fwd_dist": -0.4177008508107633,
+    "lat_dist": -0.010053451217364298
+  },
+  {
+    "robot": "robot_45_seed3875",
+    "status": "ok",
+    "ssm": 0.2239003658061001,
+    "num_legs": 5,
+    "fwd_dist": -0.3794682407690877,
+    "lat_dist": -1.411855422795322
+  },
+  {
+    "robot": "robot_46_seed4704",
+    "status": "ok",
+    "ssm": 0.06294175272876285,
+    "num_legs": 6,
+    "fwd_dist": -0.022246346105408862,
+    "lat_dist": 0.03707908609241439
+  },
+  {
+    "robot": "robot_47_seed3491",
+    "status": "ok",
+    "ssm": 0.056846316741308106,
+    "num_legs": 4,
+    "fwd_dist": 0.3029650416964044,
+    "lat_dist": 0.20407968195460557
+  },
+  {
+    "robot": "robot_48_seed6695",
+    "status": "ok",
+    "ssm": 0.25338951685551536,
+    "num_legs": 5,
+    "fwd_dist": -0.9788965640559733,
+    "lat_dist": -1.480725373760603
+  },
+  {
+    "robot": "robot_49_seed7964",
+    "status": "gen_failed"
+  }
+]
