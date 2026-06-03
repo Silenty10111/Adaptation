@@ -16,3 +16,12 @@ logs/
 # Isaac Sim and local virtual environments
 venv/
 .conda/
+
+# 忽略 png 文件夹
+png/
+
+# 忽略 batch-result 文件夹
+batch_results/
+
+# 忽略 robot_results 文件夹
+robot_results/
