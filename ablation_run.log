@@ -1,0 +1,143 @@
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Importing module 'gym_38' (/data/code/yjh/isaacgym/python/isaacgym/_bindings/linux-x86_64/gym_38.so)
+Setting GYM_USD_PLUG_INFO_PATH to /data/code/yjh/isaacgym/python/isaacgym/_bindings/linux-x86_64/usd/plugInfo.json
+======================================================================
+  消融实验 — 偏航力矩控制模块对比
+  Python: /data/conda/envs/unitree-rl/bin/python
+======================================================================
+[Load] robot_00_seed7: 10 legs  (/data/code/yjh/Adaptation/batch_results/20260530_221021/robot_00_seed7/robot_description.json)
+[Load] robot_01_seed42: 4 legs  (/data/code/yjh/Adaptation/batch_results/20260530_221021/robot_01_seed42/robot_description.json)
+[Load] SKIP robot_02_seed137: robot.urdf not found
+[Load] robot_03_seed256: 7 legs  (/data/code/yjh/Adaptation/batch_results/20260530_221021/robot_03_seed256/robot_description.json)
+[Load] robot_04_seed512: 6 legs  (/data/code/yjh/Adaptation/batch_results/20260530_221021/robot_04_seed512/robot_description.json)
+
+============================================================
+  Robot: robot_00_seed7
+============================================================
+[Plan] Computing baseline plan …
+[YawComp] net_yaw_nominal=1.1316  λ=0.2420  max_adj=0.168
+[Plan] Running CentroidalWBC …
+[CentroidalWBC] net_yaw_before=0.1240  net_yaw_after≈-0.0011  GRF_net_tau=0.0000 N·m  total_mass=11.44 kg
+[Plan] Running DynamicSymmetry …
+[DynSymmetry] 初始: yaw_integral=0.2006  lat_integral=-0.2006  score=0.6135
+[DynSymmetry] 优化后: yaw_integral=0.0287  lat_integral=-0.0287  score=0.9314  converged=False
+[Plan] Running TopologyInvariantMapper …
+[TopoMapper] 零样本步态生成完成: 10条腿，前5后5，左5右5  group_a=[0, 1, 6, 8, 9]  group_b=[2, 3, 5, 7, 4]  group_c=[]
+[Plan] Running TopologyInvariantMapper + CentroidalWBC …
+[CentroidalWBC] net_yaw_before=0.0000  net_yaw_after≈0.0000  GRF_net_tau=0.0000 N·m  total_mass=11.44 kg
+
+[Sim] Opening _RobotSimCtx for robot_00_seed7 …
+  [baseline] running 480 steps … yaw_abs=0.0125 rad/s  lat=+0.071 m  fwd=+0.0921 m/s  (2.5s wall)
+  [+wbc] running 480 steps … yaw_abs=0.0416 rad/s  lat=+0.025 m  fwd=-0.0175 m/s  (2.4s wall)
+  [+dynsym] running 480 steps … yaw_abs=0.0427 rad/s  lat=+0.033 m  fwd=-0.0155 m/s  (2.4s wall)
+  [+topo] running 480 steps … yaw_abs=0.0657 rad/s  lat=-0.287 m  fwd=-0.0208 m/s  (2.4s wall)
+  [+topo_wbc] running 480 steps … Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+yaw_abs=0.0623 rad/s  lat=-0.283 m  fwd=-0.0194 m/s  (2.4s wall)
+
+============================================================
+  Robot: robot_01_seed42
+============================================================
+[Plan] Computing baseline plan …
+[YawComp] net_yaw_nominal=-0.3064  λ=-0.1699  max_adj=0.108
+[Plan] Running CentroidalWBC …
+[CentroidalWBC] net_yaw_before=-0.0494  net_yaw_after≈-0.0052  GRF_net_tau=0.0000 N·m  total_mass=13.72 kg
+[Plan] Running DynamicSymmetry …
+[DynSymmetry] 初始: yaw_integral=-0.1003  lat_integral=0.1003  score=0.5863
+[DynSymmetry] 优化后: yaw_integral=-0.0277  lat_integral=0.0277  score=0.8630  converged=False
+[Plan] Running TopologyInvariantMapper …
+[TopoMapper] 零样本步态生成完成: 4条腿，前2后2，左2右2  group_a=[0, 1]  group_b=[2, 3]  group_c=[]
+[Plan] Running TopologyInvariantMapper + CentroidalWBC …
+[CentroidalWBC] net_yaw_before=0.0000  net_yaw_after≈0.0000  GRF_net_tau=0.0000 N·m  total_mass=13.72 kg
+
+[Sim] Opening _RobotSimCtx for robot_01_seed42 …
+  [baseline] running 480 steps … yaw_abs=0.0355 rad/s  lat=-0.157 m  fwd=-0.0194 m/s  (1.6s wall)
+  [+wbc] running 480 steps … yaw_abs=0.0258 rad/s  lat=-0.146 m  fwd=-0.0168 m/s  (1.6s wall)
+  [+dynsym] running 480 steps … yaw_abs=0.0181 rad/s  lat=-0.088 m  fwd=-0.0106 m/s  (1.6s wall)
+  [+topo] running 480 steps … yaw_abs=0.0567 rad/s  lat=-0.132 m  fwd=-0.0015 m/s  (1.6s wall)
+  [+topo_wbc] running 480 steps … Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+yaw_abs=0.0427 rad/s  lat=-0.126 m  fwd=-0.0019 m/s  (1.6s wall)
+
+============================================================
+  Robot: robot_03_seed256
+============================================================
+[Plan] Computing baseline plan …
+[YawComp] net_yaw_nominal=0.3941  λ=0.0985  max_adj=0.073
+[Plan] Running CentroidalWBC …
+[CentroidalWBC] net_yaw_before=0.0640  net_yaw_after≈-0.0084  GRF_net_tau=0.0000 N·m  total_mass=10.83 kg
+[Plan] Running DynamicSymmetry …
+[DynSymmetry] 初始: yaw_integral=0.1149  lat_integral=-0.1149  score=0.7068
+[DynSymmetry] 优化后: yaw_integral=0.0187  lat_integral=-0.0187  score=0.9449  converged=False
+[Plan] Running TopologyInvariantMapper …
+[TopoMapper] 零样本步态生成完成: 7条腿，前3后4，左3右4  group_a=[0, 4, 5, 6]  group_b=[1, 3, 2]  group_c=[]
+[Plan] Running TopologyInvariantMapper + CentroidalWBC …
+[CentroidalWBC] net_yaw_before=0.0000  net_yaw_after≈0.0000  GRF_net_tau=0.0000 N·m  total_mass=10.83 kg
+
+[Sim] Opening _RobotSimCtx for robot_03_seed256 …
+  [baseline] running 480 steps … yaw_abs=0.0395 rad/s  lat=-0.014 m  fwd=-0.0638 m/s  (2.3s wall)
+  [+wbc] running 480 steps … yaw_abs=0.0582 rad/s  lat=-0.110 m  fwd=-0.0656 m/s  (2.3s wall)
+  [+dynsym] running 480 steps … yaw_abs=0.0182 rad/s  lat=+0.098 m  fwd=+0.0858 m/s  (1.9s wall)
+  [+topo] running 480 steps … yaw_abs=0.0024 rad/s  lat=-0.024 m  fwd=-0.0084 m/s  (1.9s wall)
+  [+topo_wbc] running 480 steps … Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+yaw_abs=0.0035 rad/s  lat=-0.025 m  fwd=-0.0083 m/s  (1.9s wall)
+
+============================================================
+  Robot: robot_04_seed512
+============================================================
+[Plan] Computing baseline plan …
+[Grouping] 标准六足对角三脚架: group_a=[5, 1, 3]  group_b=[0, 4, 2]
+[YawComp] net_yaw_nominal=0.4074  λ=0.2343  max_adj=0.130
+[Plan] Running CentroidalWBC …
+[CentroidalWBC] net_yaw_before=0.0136  net_yaw_after≈-0.0030  GRF_net_tau=0.0000 N·m  total_mass=10.85 kg
+[Plan] Running DynamicSymmetry …
+[DynSymmetry] 初始: yaw_integral=0.0093  lat_integral=-0.0093  score=0.9651
+[DynSymmetry] 对称性已足够好，跳过优化。
+[Plan] Running TopologyInvariantMapper …
+[TopoMapper] 零样本步态生成完成: 6条腿，前3后3，左3右3  group_a=[0, 4, 5]  group_b=[1, 2, 3]  group_c=[]
+[Plan] Running TopologyInvariantMapper + CentroidalWBC …
+[CentroidalWBC] net_yaw_before=0.0000  net_yaw_after≈0.0000  GRF_net_tau=0.0000 N·m  total_mass=10.85 kg
+
+[Sim] Opening _RobotSimCtx for robot_04_seed512 …
+  [baseline] running 480 steps … yaw_abs=0.0097 rad/s  lat=-0.019 m  fwd=-0.0142 m/s  (2.1s wall)
+  [+wbc] running 480 steps … yaw_abs=0.0105 rad/s  lat=-0.015 m  fwd=-0.0149 m/s  (2.1s wall)
+  [+dynsym] running 480 steps … yaw_abs=0.0031 rad/s  lat=-0.030 m  fwd=-0.0125 m/s  (2.1s wall)
+  [+topo] running 480 steps … yaw_abs=0.0399 rad/s  lat=-0.368 m  fwd=-0.0217 m/s  (2.1s wall)
+  [+topo_wbc] running 480 steps … yaw_abs=0.0364 rad/s  lat=-0.389 m  fwd=-0.0222 m/s  (2.1s wall)
+
+================================================================================
+  消融实验汇总
+================================================================================
+条件                yaw_abs(rad/s)    lat_drift(m)    fwd_vel(m/s)
+----------------------------------------------------------------
+baseline              0.0243±0.013          0.0654         -0.0013
++wbc                  0.0340±0.018          0.0739         -0.0287
++dynsym               0.0205±0.014          0.0621          0.0118
++topo                 0.0412±0.024          0.2030         -0.0131
++topo_wbc             0.0362±0.021          0.2056         -0.0130
+
+  相对 baseline 的改善率
+----------------------------------------------------------------
++wbc            yaw改善=-40.1%  ↓
++dynsym         yaw改善=+15.6%  ↑
++topo           yaw改善=-69.5%  ↓
++topo_wbc       yaw改善=-49.1%  ↓
+
+[Save] Results → /data/code/yjh/Adaptation/ablation_results/ablation_20260604_230243.json
+[Save] 绘图失败: module 'numpy.typing' has no attribute 'NDArray'
+
+[Done] 消融实验完成.

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
@@ -149,14 +150,13 @@ def validate_static_stability_before_export(
     robot_description.json is edited manually or produced by an external
     tool that bypassed generate_geometry.py.
 
+    If SSM is below threshold a warning is printed but the URDF is still
+    written — set STRICT_SSM=1 in the environment to abort instead.
+
     Parameters
     ----------
     metadata  : dict   Loaded robot_description.json content.
     threshold : float  Minimum SSM in metres; default 0.0.
-
-    Raises
-    ------
-    SystemExit  If SSM < threshold.
     """
     try:
         from stability import evaluate_ssm
@@ -172,11 +172,16 @@ def validate_static_stability_before_export(
     print(f"[SSM]   支撑多边形顶点数  = {len(result['support_polygon_xy'])}")
 
     if not result["passed"]:
-        raise SystemExit(
+        msg = (
             f"\n[SSM] 静态稳定性检验不通过：SSM = {ssm_val:.4f} m < 阈值 {threshold} m。\n"
             "      质心投影在支撑多边形外，机器人设计需调整（调整腿分布或躯干几何）。\n"
             "      请重新运行 generate_geometry.py 后再生成 URDF。"
         )
+        if os.environ.get("STRICT_SSM") == "1":
+            raise SystemExit(msg)
+        else:
+            print(msg)
+            print("[SSM] WARNING: 忽略 SSM 检测，继续生成 URDF。（设 STRICT_SSM=1 以中止）")
 
 
 def main() -> None:

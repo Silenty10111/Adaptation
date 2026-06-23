@@ -38,7 +38,7 @@ for font_name in chinese_fonts:
         if font_path:
             available_font = font_name
             break
-    except:
+    except (ValueError, RuntimeError):
         continue
 
 if available_font:
@@ -52,7 +52,7 @@ matplotlib.rcParams['axes.unicode_minus'] = False
 import matplotlib.pyplot as plt
 
 # ---------- 配置 ----------
-GEN_PYTHON = "/data/conda/envs/Adaptation/bin/python"
+GEN_PYTHON = os.environ.get("ADAPTATION_PYTHON", "/data/conda/envs/Adaptation/bin/python")
 REPO_ROOT = Path(__file__).resolve().parent
 GEN_SCRIPT = REPO_ROOT / "generate_geometry.py"
 OUTPUT_DIR = REPO_ROOT / "png"
@@ -182,16 +182,16 @@ class SSMVisualizer:
                 hull = MultiPoint(self.foot_positions.tolist()).convex_hull
                 if hull.geom_type == 'Polygon':
                     return _ensure_ccw(np.array(hull.exterior.coords[:-1]))
-            except:
+            except (ValueError, AttributeError, TypeError):
                 pass
-        
+
         center = self.foot_positions.mean(axis=0)
         angles = np.arctan2(
             self.foot_positions[:, 1] - center[1],
             self.foot_positions[:, 0] - center[0]
         )
         return _ensure_ccw(self.foot_positions[np.argsort(angles)])
-    
+
     def _compute_ssm(self) -> Tuple[float, Optional[Dict]]:
         n = len(self.support_polygon)
         if n < 3:

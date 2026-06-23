@@ -1,0 +1,466 @@
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Importing module 'gym_38' (/data/code/yjh/isaacgym/python/isaacgym/_bindings/linux-x86_64/gym_38.so)
+Setting GYM_USD_PLUG_INFO_PATH to /data/code/yjh/isaacgym/python/isaacgym/_bindings/linux-x86_64/usd/plugInfo.json
+======================================================================
+  迭代改进框架 — 自动评估-分析-修正循环
+  Python: /data/conda/envs/unitree-rl/bin/python
+  最大迭代: 6  目标 yaw ≤ 0.035
+======================================================================
+[Load] robot_00_seed7: 10 腿
+[Load] robot_01_seed42: 4 腿
+[Load] SKIP robot_02_seed137: 缺少 robot_description.json 或 robot.urdf
+[Load] robot_03_seed256: 7 腿
+[Load] robot_04_seed512: 6 腿
+
+======================================================================
+  迭代 1/6: iter_01_dynsym_converge_gate
+  DynSym + 收敛门控（>8腿需收敛才应用 DynSym）
+======================================================================
+
+  ──────────────────────────────────────────────────
+  [robot_00_seed7]  num_legs=10
+  ──────────────────────────────────────────────────
+[YawComp] net_yaw_nominal=1.1316  λ=0.2420  max_adj=0.168
+  [baseline] yaw_abs=0.0108  lat=+0.069  fwd=+0.0925
+[YawComp] net_yaw_nominal=1.1316  λ=0.2420  max_adj=0.168
+[DynSymmetry] 初始: yaw_integral=0.2006  lat_integral=-0.2006  score=0.6135
+[DynSymmetry] 对称性已足够好，跳过优化。
+[DynSymmetry] 初始: yaw_integral=0.2006  lat_integral=-0.2006  score=0.6135
+[DynSymmetry] 优化后: yaw_integral=0.0287  lat_integral=-0.0287  score=0.9314  converged=True
+[Pipeline:iter_01_dynsym_converge_gate] dynsym: score 0.614→0.931, converged=True
+  [pipeline/dynsym] yaw_abs=0.0428  lat=+0.032  fwd=-0.0157  Δyaw=-0.0319 ↑
+
+  ──────────────────────────────────────────────────
+  [robot_01_seed42]  num_legs=4
+  ──────────────────────────────────────────────────
+[YawComp] net_yaw_nominal=-0.3064  λ=-0.1699  max_adj=0.108
+  [baseline] yaw_abs=0.0362  lat=-0.168  fwd=-0.0182
+[YawComp] net_yaw_nominal=-0.3064  λ=-0.1699  max_adj=0.108
+[DynSymmetry] 初始: yaw_integral=-0.1003  lat_integral=0.1003  score=0.5863
+[DynSymmetry] 对称性已足够好，跳过优化。
+[DynSymmetry] 初始: yaw_integral=-0.1003  lat_integral=0.1003  score=0.5863
+[DynSymmetry] 优化后: yaw_integral=-0.0277  lat_integral=0.0277  score=0.8630  converged=True
+[Pipeline:iter_01_dynsym_converge_gate] dynsym: score 0.586→0.863, converged=True
+  [pipeline/dynsym] yaw_abs=0.0167  lat=-0.095  fwd=-0.0093  Δyaw=+0.0195 ↓
+
+  ──────────────────────────────────────────────────
+  [robot_03_seed256]  num_legs=7
+  ──────────────────────────────────────────────────
+[YawComp] net_yaw_nominal=0.3941  λ=0.0985  max_adj=0.073
+  [baseline] yaw_abs=0.0355  lat=-0.001  fwd=-0.0632
+[YawComp] net_yaw_nominal=0.3941  λ=0.0985  max_adj=0.073
+[DynSymmetry] 初始: yaw_integral=0.1149  lat_integral=-0.1149  score=0.7068
+[DynSymmetry] 对称性已足够好，跳过优化。
+[DynSymmetry] 初始: yaw_integral=0.1149  lat_integral=-0.1149  score=0.7068
+[DynSymmetry] 优化后: yaw_integral=0.0187  lat_integral=-0.0187  score=0.9450  converged=True
+[Pipeline:iter_01_dynsym_converge_gate] dynsym: score 0.707→0.945, converged=True
+  [pipeline/dynsym] yaw_abs=0.0492  lat=-0.084  fwd=-0.0535  Δyaw=-0.0137 ↑
+
+  ──────────────────────────────────────────────────
+  [robot_04_seed512]  num_legs=6
+  ──────────────────────────────────────────────────
+[Grouping] 标准六足对角三脚架: group_a=[5, 1, 3]  group_b=[0, 4, 2]
+[YawComp] net_yaw_nominal=0.4074  λ=0.2343  max_adj=0.130
+  [baseline] yaw_abs=0.0097  lat=-0.019  fwd=-0.0142
+[Grouping] 标准六足对角三脚架: group_a=[5, 1, 3]  group_b=[0, 4, 2]
+[YawComp] net_yaw_nominal=0.4074  λ=0.2343  max_adj=0.130
+[DynSymmetry] 初始: yaw_integral=0.0093  lat_integral=-0.0093  score=0.9651
+[DynSymmetry] 对称性已足够好，跳过优化。
+[Pipeline:iter_01_dynsym_converge_gate] score=0.965 >= skip_threshold=0.92 → baseline (skip)
+  [pipeline/baseline] yaw_abs=0.0101  lat=-0.018  fwd=-0.0157  Δyaw=-0.0004 ↑
+
+  ── 本轮分析 ──────────────────────────────────────────────
+  均值 yaw_abs = 0.02971 rad/s
+  退化: 2  超标: 0  改善: 2
+  ⚠️  退化 robot_00_seed7: 0.0109→0.0428 (+294.5%)  策略=dynsym
+  ⚠️  退化 robot_03_seed256: 0.0355→0.0492 (+38.5%)  策略=dynsym
+  [Save] 结果写入 iterations/iter_01_dynsym_converge_gate/
+  [Plot] 绘图失败: module 'numpy.typing' has no attribute 'NDArray'
+[Summary] → /data/code/yjh/Adaptation/iterations/SUMMARY.json
+
+  ✓ 迭代 1 完成 (28s)
+
+  → 下一轮: iter_02_auto
+    DynSym 退化于 ['robot_00_seed7', 'robot_03_seed256']（腿数 7） → converge_max_legs: 8→6
+
+======================================================================
+  迭代 2/6: iter_02_auto
+  DynSym 退化于 ['robot_00_seed7', 'robot_03_seed256']（腿数 7） → converge_max_legs: 8→6
+======================================================================
+
+  ──────────────────────────────────────────────────
+  [robot_00_seed7]  num_legs=10
+  ──────────────────────────────────────────────────
+[YawComp] net_yaw_nominal=1.1316  λ=0.2420  max_adj=0.168
+  [baseline] yaw_abs=0.0108  lat=+0.069  fwd=+0.0925
+[YawComp] net_yaw_nominal=1.1316  λ=0.2420  max_adj=0.168
+[DynSymmetry] 初始: yaw_integral=0.2006  lat_integral=-0.2006  score=0.6135
+[DynSymmetry] 对称性已足够好，跳过优化。
+[DynSymmetry] 初始: yaw_integral=0.2006  lat_integral=-0.2006  score=0.6135
+[DynSymmetry] 优化后: yaw_integral=0.0287  lat_integral=-0.0287  score=0.9314  converged=True
+[Pipeline:iter_02_auto] dynsym: score 0.614→0.931, converged=True
+  [pipeline/dynsym] yaw_abs=0.0428  lat=+0.032  fwd=-0.0157  Δyaw=-0.0319 ↑
+
+  ──────────────────────────────────────────────────
+  [robot_01_seed42]  num_legs=4
+  ──────────────────────────────────────────────────
+[YawComp] net_yaw_nominal=-0.3064  λ=-0.1699  max_adj=0.108
+  [baseline] yaw_abs=0.0362  lat=-0.168  fwd=-0.0182
+[YawComp] net_yaw_nominal=-0.3064  λ=-0.1699  max_adj=0.108
+[DynSymmetry] 初始: yaw_integral=-0.1003  lat_integral=0.1003  score=0.5863
+[DynSymmetry] 对称性已足够好，跳过优化。
+[DynSymmetry] 初始: yaw_integral=-0.1003  lat_integral=0.1003  score=0.5863
+[DynSymmetry] 优化后: yaw_integral=-0.0277  lat_integral=0.0277  score=0.8630  converged=True
+[Pipeline:iter_02_auto] dynsym: score 0.586→0.863, converged=True
+  [pipeline/dynsym] yaw_abs=0.0167  lat=-0.095  fwd=-0.0093  Δyaw=+0.0195 ↓
+
+  ──────────────────────────────────────────────────
+  [robot_03_seed256]  num_legs=7
+  ──────────────────────────────────────────────────
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+[YawComp] net_yaw_nominal=0.3941  λ=0.0985  max_adj=0.073
+  [baseline] yaw_abs=0.0355  lat=-0.001  fwd=-0.0632
+[YawComp] net_yaw_nominal=0.3941  λ=0.0985  max_adj=0.073
+[DynSymmetry] 初始: yaw_integral=0.1149  lat_integral=-0.1149  score=0.7068
+[DynSymmetry] 对称性已足够好，跳过优化。
+[DynSymmetry] 初始: yaw_integral=0.1149  lat_integral=-0.1149  score=0.7068
+[DynSymmetry] 优化后: yaw_integral=0.0187  lat_integral=-0.0187  score=0.9450  converged=True
+[Pipeline:iter_02_auto] dynsym: score 0.707→0.945, converged=True
+  [pipeline/dynsym] yaw_abs=0.0492  lat=-0.084  fwd=-0.0535  Δyaw=-0.0137 ↑
+
+  ──────────────────────────────────────────────────
+  [robot_04_seed512]  num_legs=6
+  ──────────────────────────────────────────────────
+[Grouping] 标准六足对角三脚架: group_a=[5, 1, 3]  group_b=[0, 4, 2]
+[YawComp] net_yaw_nominal=0.4074  λ=0.2343  max_adj=0.130
+  [baseline] yaw_abs=0.0097  lat=-0.019  fwd=-0.0142
+[Grouping] 标准六足对角三脚架: group_a=[5, 1, 3]  group_b=[0, 4, 2]
+[YawComp] net_yaw_nominal=0.4074  λ=0.2343  max_adj=0.130
+[DynSymmetry] 初始: yaw_integral=0.0093  lat_integral=-0.0093  score=0.9651
+[DynSymmetry] 对称性已足够好，跳过优化。
+[Pipeline:iter_02_auto] score=0.965 >= skip_threshold=0.92 → baseline (skip)
+  [pipeline/baseline] yaw_abs=0.0101  lat=-0.018  fwd=-0.0157  Δyaw=-0.0004 ↑
+
+  ── 本轮分析 ──────────────────────────────────────────────
+  均值 yaw_abs = 0.02971 rad/s
+  退化: 2  超标: 0  改善: 2
+  ⚠️  退化 robot_00_seed7: 0.0109→0.0428 (+294.5%)  策略=dynsym
+  ⚠️  退化 robot_03_seed256: 0.0355→0.0492 (+38.5%)  策略=dynsym
+  [Save] 结果写入 iterations/iter_02_auto/
+  [Plot] 绘图失败: module 'numpy.typing' has no attribute 'NDArray'
+[Summary] → /data/code/yjh/Adaptation/iterations/SUMMARY.json
+
+  ✓ 迭代 2 完成 (27s)
+
+  → 下一轮: iter_03_auto
+    DynSym 退化于 ['robot_00_seed7', 'robot_03_seed256']（腿数 7） → converge_max_legs: 6→6
+
+======================================================================
+  迭代 3/6: iter_03_auto
+  DynSym 退化于 ['robot_00_seed7', 'robot_03_seed256']（腿数 7） → converge_max_legs: 6→6
+======================================================================
+
+  ──────────────────────────────────────────────────
+  [robot_00_seed7]  num_legs=10
+  ──────────────────────────────────────────────────
+[YawComp] net_yaw_nominal=1.1316  λ=0.2420  max_adj=0.168
+  [baseline] yaw_abs=0.0108  lat=+0.069  fwd=+0.0925
+[YawComp] net_yaw_nominal=1.1316  λ=0.2420  max_adj=0.168
+[DynSymmetry] 初始: yaw_integral=0.2006  lat_integral=-0.2006  score=0.6135
+[DynSymmetry] 对称性已足够好，跳过优化。
+[DynSymmetry] 初始: yaw_integral=0.2006  lat_integral=-0.2006  score=0.6135
+[DynSymmetry] 优化后: yaw_integral=0.0287  lat_integral=-0.0287  score=0.9314  converged=True
+[Pipeline:iter_03_auto] dynsym: score 0.614→0.931, converged=True
+  [pipeline/dynsym] yaw_abs=0.0428  lat=+0.032  fwd=-0.0157  Δyaw=-0.0319 ↑
+
+  ──────────────────────────────────────────────────
+  [robot_01_seed42]  num_legs=4
+  ──────────────────────────────────────────────────
+[YawComp] net_yaw_nominal=-0.3064  λ=-0.1699  max_adj=0.108
+  [baseline] yaw_abs=0.0362  lat=-0.168  fwd=-0.0182
+[YawComp] net_yaw_nominal=-0.3064  λ=-0.1699  max_adj=0.108
+[DynSymmetry] 初始: yaw_integral=-0.1003  lat_integral=0.1003  score=0.5863
+[DynSymmetry] 对称性已足够好，跳过优化。
+[DynSymmetry] 初始: yaw_integral=-0.1003  lat_integral=0.1003  score=0.5863
+[DynSymmetry] 优化后: yaw_integral=-0.0277  lat_integral=0.0277  score=0.8630  converged=True
+[Pipeline:iter_03_auto] dynsym: score 0.586→0.863, converged=True
+  [pipeline/dynsym] yaw_abs=0.0167  lat=-0.095  fwd=-0.0093  Δyaw=+0.0195 ↓
+
+  ──────────────────────────────────────────────────
+  [robot_03_seed256]  num_legs=7
+  ──────────────────────────────────────────────────
+[YawComp] net_yaw_nominal=0.3941  λ=0.0985  max_adj=0.073
+  [baseline] yaw_abs=0.0355  lat=-0.001  fwd=-0.0632
+[YawComp] net_yaw_nominal=0.3941  λ=0.0985  max_adj=0.073
+[DynSymmetry] 初始: yaw_integral=0.1149  lat_integral=-0.1149  score=0.7068
+[DynSymmetry] 对称性已足够好，跳过优化。
+[DynSymmetry] 初始: yaw_integral=0.1149  lat_integral=-0.1149  score=0.7068
+[DynSymmetry] 优化后: yaw_integral=0.0187  lat_integral=-0.0187  score=0.9450  converged=True
+[Pipeline:iter_03_auto] dynsym: score 0.707→0.945, converged=True
+  [pipeline/dynsym] yaw_abs=0.0492  lat=-0.084  fwd=-0.0535  Δyaw=-0.0137 ↑
+
+  ──────────────────────────────────────────────────
+  [robot_04_seed512]  num_legs=6
+  ──────────────────────────────────────────────────
+[Grouping] 标准六足对角三脚架: group_a=[5, 1, 3]  group_b=[0, 4, 2]
+[YawComp] net_yaw_nominal=0.4074  λ=0.2343  max_adj=0.130
+  [baseline] yaw_abs=0.0097  lat=-0.019  fwd=-0.0142
+[Grouping] 标准六足对角三脚架: group_a=[5, 1, 3]  group_b=[0, 4, 2]
+[YawComp] net_yaw_nominal=0.4074  λ=0.2343  max_adj=0.130
+[DynSymmetry] 初始: yaw_integral=0.0093  lat_integral=-0.0093  score=0.9651
+[DynSymmetry] 对称性已足够好，跳过优化。
+[Pipeline:iter_03_auto] score=0.965 >= skip_threshold=0.92 → baseline (skip)
+  [pipeline/baseline] yaw_abs=0.0101  lat=-0.018  fwd=-0.0157  Δyaw=-0.0004 ↑
+
+  ── 本轮分析 ──────────────────────────────────────────────
+  均值 yaw_abs = 0.02971 rad/s
+  退化: 2  超标: 0  改善: 2
+  ⚠️  退化 robot_00_seed7: 0.0109→0.0428 (+294.5%)  策略=dynsym
+  ⚠️  退化 robot_03_seed256: 0.0355→0.0492 (+38.5%)  策略=dynsym
+  [Save] 结果写入 iterations/iter_03_auto/
+  [Plot] 绘图失败: module 'numpy.typing' has no attribute 'NDArray'
+[Summary] → /data/code/yjh/Adaptation/iterations/SUMMARY.json
+
+  ✓ 迭代 3 完成 (28s)
+
+  → 下一轮: iter_04_auto
+    DynSym 退化于 ['robot_00_seed7', 'robot_03_seed256']（腿数 7） → converge_max_legs: 6→6
+
+======================================================================
+  迭代 4/6: iter_04_auto
+  DynSym 退化于 ['robot_00_seed7', 'robot_03_seed256']（腿数 7） → converge_max_legs: 6→6
+======================================================================
+
+  ──────────────────────────────────────────────────
+  [robot_00_seed7]  num_legs=10
+  ──────────────────────────────────────────────────
+[YawComp] net_yaw_nominal=1.1316  λ=0.2420  max_adj=0.168
+  [baseline] yaw_abs=0.0108  lat=+0.069  fwd=+0.0925
+[YawComp] net_yaw_nominal=1.1316  λ=0.2420  max_adj=0.168
+[DynSymmetry] 初始: yaw_integral=0.2006  lat_integral=-0.2006  score=0.6135
+[DynSymmetry] 对称性已足够好，跳过优化。
+[DynSymmetry] 初始: yaw_integral=0.2006  lat_integral=-0.2006  score=0.6135
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+[DynSymmetry] 优化后: yaw_integral=0.0287  lat_integral=-0.0287  score=0.9314  converged=True
+[Pipeline:iter_04_auto] dynsym: score 0.614→0.931, converged=True
+  [pipeline/dynsym] yaw_abs=0.0428  lat=+0.032  fwd=-0.0157  Δyaw=-0.0319 ↑
+
+  ──────────────────────────────────────────────────
+  [robot_01_seed42]  num_legs=4
+  ──────────────────────────────────────────────────
+[YawComp] net_yaw_nominal=-0.3064  λ=-0.1699  max_adj=0.108
+  [baseline] yaw_abs=0.0362  lat=-0.168  fwd=-0.0182
+[YawComp] net_yaw_nominal=-0.3064  λ=-0.1699  max_adj=0.108
+[DynSymmetry] 初始: yaw_integral=-0.1003  lat_integral=0.1003  score=0.5863
+[DynSymmetry] 对称性已足够好，跳过优化。
+[DynSymmetry] 初始: yaw_integral=-0.1003  lat_integral=0.1003  score=0.5863
+[DynSymmetry] 优化后: yaw_integral=-0.0277  lat_integral=0.0277  score=0.8630  converged=True
+[Pipeline:iter_04_auto] dynsym: score 0.586→0.863, converged=True
+  [pipeline/dynsym] yaw_abs=0.0167  lat=-0.095  fwd=-0.0093  Δyaw=+0.0195 ↓
+
+  ──────────────────────────────────────────────────
+  [robot_03_seed256]  num_legs=7
+  ──────────────────────────────────────────────────
+[YawComp] net_yaw_nominal=0.3941  λ=0.0985  max_adj=0.073
+  [baseline] yaw_abs=0.0355  lat=-0.001  fwd=-0.0632
+[YawComp] net_yaw_nominal=0.3941  λ=0.0985  max_adj=0.073
+[DynSymmetry] 初始: yaw_integral=0.1149  lat_integral=-0.1149  score=0.7068
+[DynSymmetry] 对称性已足够好，跳过优化。
+[DynSymmetry] 初始: yaw_integral=0.1149  lat_integral=-0.1149  score=0.7068
+[DynSymmetry] 优化后: yaw_integral=0.0187  lat_integral=-0.0187  score=0.9450  converged=True
+[Pipeline:iter_04_auto] dynsym: score 0.707→0.945, converged=True
+  [pipeline/dynsym] yaw_abs=0.0492  lat=-0.084  fwd=-0.0535  Δyaw=-0.0137 ↑
+
+  ──────────────────────────────────────────────────
+  [robot_04_seed512]  num_legs=6
+  ──────────────────────────────────────────────────
+[Grouping] 标准六足对角三脚架: group_a=[5, 1, 3]  group_b=[0, 4, 2]
+[YawComp] net_yaw_nominal=0.4074  λ=0.2343  max_adj=0.130
+  [baseline] yaw_abs=0.0097  lat=-0.019  fwd=-0.0142
+[Grouping] 标准六足对角三脚架: group_a=[5, 1, 3]  group_b=[0, 4, 2]
+[YawComp] net_yaw_nominal=0.4074  λ=0.2343  max_adj=0.130
+[DynSymmetry] 初始: yaw_integral=0.0093  lat_integral=-0.0093  score=0.9651
+[DynSymmetry] 对称性已足够好，跳过优化。
+[Pipeline:iter_04_auto] score=0.965 >= skip_threshold=0.92 → baseline (skip)
+  [pipeline/baseline] yaw_abs=0.0101  lat=-0.018  fwd=-0.0157  Δyaw=-0.0004 ↑
+
+  ── 本轮分析 ──────────────────────────────────────────────
+  均值 yaw_abs = 0.02971 rad/s
+  退化: 2  超标: 0  改善: 2
+  ⚠️  退化 robot_00_seed7: 0.0109→0.0428 (+294.5%)  策略=dynsym
+  ⚠️  退化 robot_03_seed256: 0.0355→0.0492 (+38.5%)  策略=dynsym
+  [Save] 结果写入 iterations/iter_04_auto/
+  [Plot] 绘图失败: module 'numpy.typing' has no attribute 'NDArray'
+[Summary] → /data/code/yjh/Adaptation/iterations/SUMMARY.json
+
+  ✓ 迭代 4 完成 (28s)
+
+  → 下一轮: iter_05_auto
+    DynSym 退化于 ['robot_00_seed7', 'robot_03_seed256']（腿数 7） → converge_max_legs: 6→6
+
+======================================================================
+  迭代 5/6: iter_05_auto
+  DynSym 退化于 ['robot_00_seed7', 'robot_03_seed256']（腿数 7） → converge_max_legs: 6→6
+======================================================================
+
+  ──────────────────────────────────────────────────
+  [robot_00_seed7]  num_legs=10
+  ──────────────────────────────────────────────────
+[YawComp] net_yaw_nominal=1.1316  λ=0.2420  max_adj=0.168
+  [baseline] yaw_abs=0.0108  lat=+0.069  fwd=+0.0925
+[YawComp] net_yaw_nominal=1.1316  λ=0.2420  max_adj=0.168
+[DynSymmetry] 初始: yaw_integral=0.2006  lat_integral=-0.2006  score=0.6135
+[DynSymmetry] 对称性已足够好，跳过优化。
+[DynSymmetry] 初始: yaw_integral=0.2006  lat_integral=-0.2006  score=0.6135
+[DynSymmetry] 优化后: yaw_integral=0.0287  lat_integral=-0.0287  score=0.9314  converged=True
+[Pipeline:iter_05_auto] dynsym: score 0.614→0.931, converged=True
+  [pipeline/dynsym] yaw_abs=0.0428  lat=+0.032  fwd=-0.0157  Δyaw=-0.0319 ↑
+
+  ──────────────────────────────────────────────────
+  [robot_01_seed42]  num_legs=4
+  ──────────────────────────────────────────────────
+[YawComp] net_yaw_nominal=-0.3064  λ=-0.1699  max_adj=0.108
+  [baseline] yaw_abs=0.0362  lat=-0.168  fwd=-0.0182
+[YawComp] net_yaw_nominal=-0.3064  λ=-0.1699  max_adj=0.108
+[DynSymmetry] 初始: yaw_integral=-0.1003  lat_integral=0.1003  score=0.5863
+[DynSymmetry] 对称性已足够好，跳过优化。
+[DynSymmetry] 初始: yaw_integral=-0.1003  lat_integral=0.1003  score=0.5863
+[DynSymmetry] 优化后: yaw_integral=-0.0277  lat_integral=0.0277  score=0.8630  converged=True
+[Pipeline:iter_05_auto] dynsym: score 0.586→0.863, converged=True
+  [pipeline/dynsym] yaw_abs=0.0167  lat=-0.095  fwd=-0.0093  Δyaw=+0.0195 ↓
+
+  ──────────────────────────────────────────────────
+  [robot_03_seed256]  num_legs=7
+  ──────────────────────────────────────────────────
+[YawComp] net_yaw_nominal=0.3941  λ=0.0985  max_adj=0.073
+  [baseline] yaw_abs=0.0355  lat=-0.001  fwd=-0.0632
+[YawComp] net_yaw_nominal=0.3941  λ=0.0985  max_adj=0.073
+[DynSymmetry] 初始: yaw_integral=0.1149  lat_integral=-0.1149  score=0.7068
+[DynSymmetry] 对称性已足够好，跳过优化。
+[DynSymmetry] 初始: yaw_integral=0.1149  lat_integral=-0.1149  score=0.7068
+[DynSymmetry] 优化后: yaw_integral=0.0187  lat_integral=-0.0187  score=0.9450  converged=True
+[Pipeline:iter_05_auto] dynsym: score 0.707→0.945, converged=True
+  [pipeline/dynsym] yaw_abs=0.0492  lat=-0.084  fwd=-0.0535  Δyaw=-0.0137 ↑
+
+  ──────────────────────────────────────────────────
+  [robot_04_seed512]  num_legs=6
+  ──────────────────────────────────────────────────
+[Grouping] 标准六足对角三脚架: group_a=[5, 1, 3]  group_b=[0, 4, 2]
+[YawComp] net_yaw_nominal=0.4074  λ=0.2343  max_adj=0.130
+  [baseline] yaw_abs=0.0097  lat=-0.019  fwd=-0.0142
+[Grouping] 标准六足对角三脚架: group_a=[5, 1, 3]  group_b=[0, 4, 2]
+[YawComp] net_yaw_nominal=0.4074  λ=0.2343  max_adj=0.130
+[DynSymmetry] 初始: yaw_integral=0.0093  lat_integral=-0.0093  score=0.9651
+[DynSymmetry] 对称性已足够好，跳过优化。
+[Pipeline:iter_05_auto] score=0.965 >= skip_threshold=0.92 → baseline (skip)
+  [pipeline/baseline] yaw_abs=0.0101  lat=-0.018  fwd=-0.0157  Δyaw=-0.0004 ↑
+
+  ── 本轮分析 ──────────────────────────────────────────────
+  均值 yaw_abs = 0.02971 rad/s
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled

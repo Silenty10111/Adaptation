@@ -1,0 +1,96 @@
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Importing module 'gym_38' (/data/code/yjh/isaacgym/python/isaacgym/_bindings/linux-x86_64/gym_38.so)
+Setting GYM_USD_PLUG_INFO_PATH to /data/code/yjh/isaacgym/python/isaacgym/_bindings/linux-x86_64/usd/plugInfo.json
+======================================================================
+  最终综合对比 — 自适应策略选择
+======================================================================
+[Load] robot_00_seed7: 10 legs
+[Load] robot_01_seed42: 4 legs
+[Load] robot_03_seed256: 7 legs
+[Load] robot_04_seed512: 6 legs
+
+============================================================
+  robot_00_seed7 (10 legs)
+============================================================
+[YawComp] net_yaw_nominal=1.1316  λ=0.2420  max_adj=0.168
+[DynSymmetry] 初始: yaw_integral=0.2006  lat_integral=-0.2006  score=0.6135
+[DynSymmetry] 优化后: yaw_integral=0.0287  lat_integral=-0.0287  score=0.9314  converged=False
+[TopoMapper] 零样本步态生成完成: 10条腿，前5后5，左5右5  group_a=[0, 1, 6, 8, 9]  group_b=[2, 3, 5, 7, 4]  group_c=[]
+  [baseline] yaw=0.0125  lat=+0.071  (2.5s)
+  [+dynsym] yaw=0.0466  lat=+0.042  (2.4s)
+  [+topo] yaw=0.0584  lat=+0.087  (2.4s)
+  [+online] Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+yaw=0.0433  lat=+0.032  (2.8s)
+
+============================================================
+  robot_01_seed42 (4 legs)
+============================================================
+[YawComp] net_yaw_nominal=-0.3064  λ=-0.1699  max_adj=0.108
+[DynSymmetry] 初始: yaw_integral=-0.1003  lat_integral=0.1003  score=0.5863
+[DynSymmetry] 优化后: yaw_integral=-0.0277  lat_integral=0.0277  score=0.8630  converged=False
+[TopoMapper] 零样本步态生成完成: 4条腿，前2后2，左2右2  group_a=[0, 1]  group_b=[2, 3]  group_c=[]
+  [baseline] yaw=0.0355  lat=-0.157  (1.6s)
+  [+dynsym] yaw=0.0152  lat=-0.093  (1.6s)
+  [+topo] yaw=0.0409  lat=+0.007  (1.6s)
+  [+online] Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+yaw=0.0128  lat=-0.093  (1.8s)
+
+============================================================
+  robot_03_seed256 (7 legs)
+============================================================
+[YawComp] net_yaw_nominal=0.3941  λ=0.0985  max_adj=0.073
+[DynSymmetry] 初始: yaw_integral=0.1149  lat_integral=-0.1149  score=0.7068
+[DynSymmetry] 优化后: yaw_integral=0.0187  lat_integral=-0.0187  score=0.9449  converged=False
+[TopoMapper] 零样本步态生成完成: 7条腿，前3后4，左3右4  group_a=[0, 4, 5, 6]  group_b=[1, 2, 3]  group_c=[]
+  [baseline] yaw=0.0395  lat=-0.014  (2.3s)
+  [+dynsym] yaw=0.0506  lat=-0.091  (2.3s)
+  [+topo] yaw=0.0658  lat=-0.034  (2.3s)
+  [+online] Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+yaw=0.0018  lat=+0.050  (2.3s)
+
+============================================================
+  robot_04_seed512 (6 legs)
+============================================================
+[Grouping] 标准六足对角三脚架: group_a=[5, 1, 3]  group_b=[0, 4, 2]
+[YawComp] net_yaw_nominal=0.4074  λ=0.2343  max_adj=0.130
+[DynSymmetry] 初始: yaw_integral=0.0093  lat_integral=-0.0093  score=0.9651
+[DynSymmetry] 对称性已足够好，跳过优化。
+[TopoMapper] 零样本步态生成完成: 6条腿，前3后3，左3右3  group_a=[0, 4, 5]  group_b=[1, 2, 3]  group_c=[]
+  [baseline] yaw=0.0097  lat=-0.019  (2.1s)
+  [+dynsym] yaw=0.0032  lat=-0.031  (2.1s)
+  [+topo] yaw=0.0474  lat=+0.190  (2.1s)
+  [+online] yaw=0.0017  lat=+0.007  (2.3s)
+
+====================================================================================================
+  最终综合对比 — 跨所有策略的偏航控制效果
+====================================================================================================
+
+机器人                  腿数        baseline     +dynsym       +topo     +online          最优         改善
+----------------------------------------------------------------------------------------------
+robot_00_seed7       10         0.0125 ★     0.0466     0.0584     0.0433    baseline      +0.0% ↑
+robot_01_seed42      4          0.0355     0.0152     0.0409     0.0128 ★     +online     +64.0% ↓
+robot_03_seed256     7          0.0395     0.0506     0.0658     0.0018 ★     +online     +95.5% ↓
+robot_04_seed512     6          0.0097     0.0032     0.0474     0.0017 ★     +online     +82.9% ↓
+
+──────────────────────────────────────────────────────────────────────────────────────────────
+  最优策略组合 mean|yaw| = 0.0072  (baseline: 0.0243)  改善: +70.5%
+  各机器人最优策略: {'robot_00_seed7': 'baseline', 'robot_01_seed42': '+online', 'robot_03_seed256': '+online', 'robot_04_seed512': '+online'}
+
+[Save] → /data/code/yjh/Adaptation/final_results/final_20260623_124722.json
+[Done]

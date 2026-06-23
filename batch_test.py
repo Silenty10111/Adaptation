@@ -11,7 +11,7 @@ from __future__ import annotations
 # ─────────────────────────── 配置区（直接在这里改参数）──────────────────────
 
 # 要生成的机器人数量
-NUM_ROBOTS = 160
+NUM_ROBOTS = 500
 
 # 随机种子列表（优先使用此列表；若列表比 NUM_ROBOTS 短则自动补充随机种子）
 SEEDS = [7, 42, 137, 256, 512]
@@ -59,51 +59,49 @@ GPU_BATCH_SIZE = 8
 # 输出根目录
 OUTPUT_DIR           = "batch_results"
 
+# ── 在线 EKF 偏航修正 ──────────────────────────────────────────────────────
+# 启用后，对 baseline 偏航较高的机器人自动尝试 EKF 在线估计修正
+USE_ONLINE_EKF       = True
+# 触发 EKF 的漂移比阈值 (|lat|/|fwd|)，超过此值启用在线修正
+EKF_DRIFT_THRESHOLD  = 0.30
+# EKF 仿真步数
+EKF_PROBE_STEPS      = 480
+
 # ─────────────────────────── 以下无需修改 ────────────────────────────────────
 
-import json
-import math
 import os
-import random
-import shutil
-import subprocess
 import sys
-import time
-from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
-import numpy as np
-
-TARGET_PYTHON  = "/data/conda/envs/unitree-rl/bin/python"
-TARGET_LD_PATH = "/data/conda/envs/unitree-rl/lib"
+TARGET_PYTHON  = os.environ.get("ISAAC_PYTHON", "/data/conda/envs/unitree-rl/bin/python")
+TARGET_LD_PATH = os.environ.get("ISAAC_LD_LIBRARY_PATH", "/data/conda/envs/unitree-rl/lib")
 REPO_ROOT      = Path(__file__).resolve().parent
-GEN_PYTHON     = "/data/conda/envs/Adaptation/bin/python"
+GEN_PYTHON     = os.environ.get("ADAPTATION_PYTHON", "/data/conda/envs/Adaptation/bin/python")
 GEN_SCRIPT     = REPO_ROOT / "generate_geometry.py"
 GEN_URDF       = REPO_ROOT / "generate_urdf.py"
 ASSET_ROOT     = REPO_ROOT / "robot_assets"
 
-
 # ---------------------------------------------------------------------------
-# Auto re-exec into unitree-rl environment (required for Isaac Gym)
+# Auto re-exec into unitree-rl environment (must happen before numpy import)
 # ---------------------------------------------------------------------------
 
-def _maybe_reexec():
-    if os.environ.get("BATCH_REEXEC") == "1":
-        return
-    if sys.executable == TARGET_PYTHON:
-        return
-    if not Path(TARGET_PYTHON).exists():
-        return
-    env = dict(os.environ)
-    ld = env.get("LD_LIBRARY_PATH", "")
-    env["LD_LIBRARY_PATH"] = f"{TARGET_LD_PATH}:{ld}" if ld else TARGET_LD_PATH
-    env["BATCH_REEXEC"] = "1"
-    print("[INFO] 切换到 unitree-rl 环境执行...")
-    os.execvpe(TARGET_PYTHON, [TARGET_PYTHON, *sys.argv], env)
+sys.path.insert(0, str(REPO_ROOT))
+from reexec import maybe_reexec
 
+maybe_reexec(TARGET_PYTHON, TARGET_LD_PATH)
 
-_maybe_reexec()
+# ─── After re-exec (unitree-rl environment) ─────────────────────────────────
+
+import json
+import math
+import random
+import shutil
+import subprocess
+import time
+from datetime import datetime
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
 
 # ---------------------------------------------------------------------------
 # Isaac Gym imports (available after re-exec)
@@ -874,92 +872,21 @@ class _RobotSimCtx:
 def optimize_and_simulate(
     description: dict, urdf_path: Path,
 ) -> Tuple[List[List[float]], List[float]]:
-    """Probe → correct → full-sim, all inside ONE sim context (no segfault)."""
-    from adaptive_gait import compute_adaptive_plan
+    """Probe → correct → full-sim, all inside ONE sim context (no segfault).
 
-    PROBE_STEPS      = 360
-    YAW_BAD_THRESH   = 0.18
-    FWD_STUCK_THRESH = 0.004
-    MAX_YAW_ITERS    = 3
-    _dt              = 1.0 / 60.0
-
-    def _metrics(trail, fwd_ax, n_steps):
-        if len(trail) < 2 or n_steps == 0:
-            return 0.0, 0.0
-        arr = np.array(trail, dtype=float)
-        disp = arr[-1] - arr[0]
-        elapsed = max(n_steps * _dt, _dt)
-        return float(np.dot(disp, fwd_ax)) / elapsed, float(np.linalg.norm(disp)) / elapsed
-
-    plan0 = compute_adaptive_plan(description, {})
-    fwd0  = np.asarray(plan0["final_forward_axis"], dtype=float)
-    fwd0  = fwd0 / max(float(np.linalg.norm(fwd0)), 1e-9)
+    Thin wrapper around probe_and_correct_plan that also runs the full simulation.
+    """
+    plan, fwd_axis = probe_and_correct_plan(description, urdf_path)
+    fwd = np.asarray(fwd_axis, dtype=float)
+    fwd = fwd / max(float(np.linalg.norm(fwd)), 1e-9)
 
     _full_steps = max(MAX_SIM_STEPS, SIM_STEPS)
-    _min_travel = 0.0  # will be computed inside ctx
 
     with _RobotSimCtx(description, urdf_path, use_gpu=USE_GPU) as ctx:
         _min_travel = ctx.body_length * max(MIN_TRAVEL_BODY_LENGTHS, 0.0)
-
-        # Probe 1
-        trail1, _, stats1 = ctx.run_episode(plan0, PROBE_STEPS, return_yaw_stats=True)
-        yaw1           = stats1["yaw_rate_mean"]
-        fwd_vel1, spd1 = _metrics(trail1, fwd0, len(trail1))
-        print(f"  [Probe1] yaw={yaw1:+.3f} rad/s  fwd_vel={fwd_vel1:+.4f} m/s  speed={spd1:.4f} m/s")
-
-        if abs(yaw1) < YAW_BAD_THRESH and fwd_vel1 > FWD_STUCK_THRESH:
-            print("  [Opt] Plan OK → full sim")
-            trail_f, ax_f, _ = ctx.run_episode(plan0, _full_steps,
-                                                min_travel=_min_travel, min_steps=SIM_STEPS)
-            return trail_f, ax_f
-
-        if fwd_vel1 < FWD_STUCK_THRESH:
-            major = np.asarray(plan0["initial_virtual_forward_axis"], dtype=float)
-            major = major / max(float(np.linalg.norm(major)), 1e-9)
-            minor = np.array([-major[1], major[0]], dtype=float)
-            best_score = fwd_vel1 - 0.3 * abs(yaw1)
-            best_plan  = plan0; best_fwd = fwd0.copy()
-            for cand in [-major, minor, -minor]:
-                cand_n = cand / max(float(np.linalg.norm(cand)), 1e-9)
-                if float(np.dot(cand_n, fwd0)) > 0.90:
-                    continue
-                plan_c = compute_adaptive_plan(description, {}, forced_axis=cand_n.tolist())
-                trail_c, _, stats_c = ctx.run_episode(plan_c, PROBE_STEPS, return_yaw_stats=True)
-                yaw_c   = stats_c["yaw_rate_mean"]
-                fwd_c, _ = _metrics(trail_c, cand_n, len(trail_c))
-                score_c  = fwd_c - 0.3 * abs(yaw_c)
-                print(f"  [AltAxis] {[round(v,3) for v in cand_n.tolist()]}  "
-                      f"yaw={yaw_c:+.3f}  fwd={fwd_c:+.4f}  score={score_c:.4f}")
-                if score_c > best_score:
-                    best_score = score_c; best_plan = plan_c; best_fwd = cand_n.copy()
-            if abs(yaw1) > YAW_BAD_THRESH:
-                best_plan = _apply_amp_correction(best_plan, yaw1)
-            print(f"  [Opt] Axis: {[round(v,3) for v in best_fwd.tolist()]}")
-            trail_f, ax_f, _ = ctx.run_episode(best_plan, _full_steps,
-                                                min_travel=_min_travel, min_steps=SIM_STEPS)
-            return trail_f, list(best_fwd)
-
-        # Case C: spinning
-        best_plan  = plan0; best_score = fwd_vel1 - 0.3 * abs(yaw1)
-        cur_yaw = yaw1; cur_plan = plan0
-        for iter_i in range(MAX_YAW_ITERS):
-            if abs(cur_yaw) < YAW_BAD_THRESH:
-                break
-            strength  = 0.55 + 0.18 * iter_i
-            plan_corr = _apply_amp_correction(cur_plan, cur_yaw, strength=strength)
-            trail_c, _, stats_c = ctx.run_episode(plan_corr, PROBE_STEPS, return_yaw_stats=True)
-            yaw_c    = stats_c["yaw_rate_mean"]
-            fwd_c, _ = _metrics(trail_c, fwd0, len(trail_c))
-            score_c  = fwd_c - 0.3 * abs(yaw_c)
-            print(f"  [YawIter{iter_i+1}] strength={strength:.2f}  "
-                  f"yaw={yaw_c:+.3f} rad/s  fwd={fwd_c:+.4f} m/s  score={score_c:.4f}")
-            if score_c > best_score:
-                best_score = score_c; best_plan = plan_corr
-            cur_yaw = yaw_c; cur_plan = plan_corr
-        print(f"  [Opt] Best score={best_score:.4f}")
-        trail_f, ax_f, _ = ctx.run_episode(best_plan, _full_steps,
+        trail_f, ax_f, _ = ctx.run_episode(plan, _full_steps,
                                             min_travel=_min_travel, min_steps=SIM_STEPS)
-        return trail_f, ax_f
+        return trail_f, list(ax_f)
 
 
 def probe_and_correct_plan(
@@ -2135,6 +2062,7 @@ def generate_batch_report(out_root: Path, summary_rows: List[dict]) -> Path:
         f"**Date**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  ",
         f"**Config**: {NUM_ROBOTS} robots, seeds={SEEDS[:5]}{'…' if len(SEEDS)>5 else ''}  ",
         f"**GPU**: {USE_GPU}, batch_size={GPU_BATCH_SIZE}",
+        f"**EKF Online**: {'enabled' if USE_ONLINE_EKF else 'disabled'} (drift threshold={EKF_DRIFT_THRESHOLD})",
         f"",
         f"---",
         f"",
@@ -2256,9 +2184,11 @@ def generate_batch_report(out_root: Path, summary_rows: List[dict]) -> Path:
 
     fwd_mean = sum(fwd_vals) / len(fwd_vals) if fwd_vals else 0
     lat_mean = sum(lat_vals) / len(lat_vals) if lat_vals else 0
+    drift_mean = sum(drift_vals) / len(drift_vals) if drift_vals else 0
     lines += [
-        f"**平均前进距离**: {fwd_mean:+.3f} m，**平均偏移**: {lat_mean:.3f} m  ",
-        f"（偏移/前进比越小越直；< 0.3 视为良好）",
+        f"**平均前进距离**: {fwd_mean:+.3f} m，**平均偏移**: {lat_mean:.3f} m",
+        f"**平均漂移比**: {drift_mean:.3f}（越小越直；< 0.3 视为良好）",
+        f"**EKF在线修正**: {ekf_count}/{len(ok_rows)} 机器人触发 ({ekf_count/max(len(ok_rows),1)*100:.1f}%)",
         f"",
         f"---",
         f"*Auto-generated by batch_test.py*",
@@ -2307,6 +2237,9 @@ def generate_html_report(out_root: Path, summary_rows: List[dict]) -> Path:
 
     fwd_vals = [r["fwd_dist"] for r in ok_rows] if ok_rows else [0.0]
     lat_vals = [abs(r["lat_dist"]) for r in ok_rows] if ok_rows else [0.0]
+    drift_vals = [r.get("drift_ratio", abs(r["lat_dist"])/max(abs(r["fwd_dist"]),0.01))
+                  for r in ok_rows] if ok_rows else [0.0]
+    ekf_count = sum(1 for r in ok_rows if r.get("strategy") == "ekf_online")
     ssm_vals = [r["ssm"] for r in summary_rows if "ssm" in r]
 
     def _mean(lst): return sum(lst) / len(lst) if lst else 0.0
@@ -2324,10 +2257,14 @@ def generate_html_report(out_root: Path, summary_rows: List[dict]) -> Path:
         legs_str = str(r.get("num_legs", "—"))
         fwd      = r.get("fwd_dist", _math.nan)
         lat      = r.get("lat_dist", _math.nan)
+        drift    = r.get("drift_ratio", _math.nan)
+        strategy = r.get("strategy", "baseline")
         fwd_str  = f"{fwd:+.3f}" if not _math.isnan(fwd) else "—"
         lat_str  = f"{lat:+.3f}" if not _math.isnan(lat) else "—"
+        drift_str = f"{drift:.3f}" if not _math.isnan(drift) else "—"
         fwd_data = f"{fwd:.6f}"  if not _math.isnan(fwd) else "-9999"
         lat_data = f"{lat:.6f}"  if not _math.isnan(lat) else "-9999"
+        drift_data = f"{drift:.6f}" if not _math.isnan(drift) else "-9999"
         ssm_data = f"{r['ssm']:.6f}" if "ssm" in r else "-9999"
         legs_data = str(r.get("num_legs", 0))
 
@@ -2352,6 +2289,8 @@ def generate_html_report(out_root: Path, summary_rows: List[dict]) -> Path:
             f'<td data-val="{ssm_data}">{ssm_str}</td>'
             f'<td data-val="{fwd_data}">{fwd_str}</td>'
             f'<td data-val="{lat_data}">{lat_str}</td>'
+            f'<td data-val="{drift_data}">{drift_str}</td>'
+            f'<td>{strategy}</td>'
             f'<td>{label}</td>'
             f'{thumb_td}'
             f'</tr>'
@@ -2469,6 +2408,11 @@ def generate_html_report(out_root: Path, summary_rows: List[dict]) -> Path:
         <td>{_mean(lat_vals):.3f}</td>
         <td>{max(lat_vals):.3f}</td></tr>
     {"<tr><td>SSM (m)</td><td>" + f"{min(ssm_vals):.4f}</td><td>{_mean(ssm_vals):.4f}</td><td>{max(ssm_vals):.4f}</td></tr>" if ssm_vals else ""}
+    <tr><td>Drift ratio</td>
+        <td>{min(drift_vals):.3f}</td>
+        <td>{_mean(drift_vals):.3f}</td>
+        <td>{max(drift_vals):.3f}</td></tr>
+    <tr><td colspan="4">EKF online triggered: {ekf_count}/{total} robots</td></tr>
   </tbody>
 </table>
 
@@ -2490,7 +2434,9 @@ def generate_html_report(out_root: Path, summary_rows: List[dict]) -> Path:
       <th onclick="sortTable(3)">SSM<span class="sort-icon">⇅</span></th>
       <th onclick="sortTable(4)">Fwd (m)<span class="sort-icon">⇅</span></th>
       <th onclick="sortTable(5)">Lat (m)<span class="sort-icon">⇅</span></th>
-      <th onclick="sortTable(6)">Category<span class="sort-icon">⇅</span></th>
+      <th onclick="sortTable(6)">Drift<span class="sort-icon">⇅</span></th>
+      <th onclick="sortTable(7)">Strategy<span class="sort-icon">⇅</span></th>
+      <th onclick="sortTable(8)">Category<span class="sort-icon">⇅</span></th>
       <th>Trajectory</th>
     </tr>
   </thead>
@@ -2568,6 +2514,144 @@ document.addEventListener('keydown', e => {{ if (e.key === 'Escape') closeModal(
     html_path = out_root / "report.html"
     html_path.write_text(html, encoding="utf-8")
     return html_path
+
+
+# ---------------------------------------------------------------------------
+# EKF Online Yaw Correction (方向C 集成)
+# ---------------------------------------------------------------------------
+
+def run_ekf_online_simulation(
+    description: dict,
+    urdf_path: Path,
+    plan: dict,
+    n_steps: int = 480,
+) -> Tuple[List[List[float]], List[float], Optional[Dict]]:
+    """Run a single-robot simulation with EKF online yaw correction.
+
+    Returns (com_trail, forward_axis, yaw_stats).
+    """
+    from online_state_estimator import OnlineStateEstimator, make_observation
+
+    fwd = np.asarray(plan.get("final_forward_axis", [1.0, 0.0]), dtype=float)
+    fwd = fwd / max(float(np.linalg.norm(fwd)), 1e-9)
+    lat = np.array([-fwd[1], fwd[0]], dtype=float)
+
+    topo = plan["topology"]
+    group_a = topo["groups"]["group_a"]
+    group_b = topo["groups"]["group_b"]
+    group_c = topo["groups"].get("group_c", [])
+    base_amps = {str(k): float(v) for k, v in topo.get("per_leg_stride_amplitudes", {}).items()}
+
+    total_mass = sum(
+        float(lk.get("mass_properties", {}).get("mass", 0.0))
+        for lk in description.get("links", [])
+    )
+    estimator = OnlineStateEstimator(description, plan, total_mass=max(total_mass, 1.0))
+
+    with _RobotSimCtx(description, urdf_path, use_gpu=USE_GPU) as ctx:
+        ga = ctx._ga
+        gym, sim, env, actor = ctx.gym, ctx.sim, ctx.env, ctx.actor
+        ctx._reset()
+
+        def _rtj(lo, hi, r):
+            return float(lo + max(0.0, min(1.0, r)) * (hi - lo))
+        def _ss(e0, e1, x):
+            t = max(0.0, min(1.0, (x - e0) / max(e1 - e0, 1e-9)))
+            return t * t * (3.0 - 2.0 * t)
+
+        _sl, _swl, _sd, _swd = ctx._sl, ctx._swl, ctx._sd, ctx._swd
+        com_trail: List[List[float]] = []
+        yaw_acc:   List[float] = []
+        touchdown_ramp: Dict[int, int] = {}
+        sim_time = 0.0
+        _dt = 1.0 / 60.0
+
+        for step in range(n_steps):
+            phase_now = 2.0 * math.pi * GAIT_FREQUENCY * sim_time
+            targets = ctx.stand_ev.copy()
+
+            adapt = estimator.get_state()
+            online_scales = {str(k): float(v) for k, v in adapt.adaptive_stride_scales.items()}
+
+            for lid, j in ctx.triplets.items():
+                if lid in group_c:
+                    targets[j["lift_idx"]]  = _rtj(j["lift_lower"], j["lift_upper"], _sl)
+                    targets[j["drop_idx"]]  = _rtj(j["drop_lower"], j["drop_upper"], _sd)
+                    targets[j["swing_idx"]] = _rtj(j["swing_lower"], j["swing_upper"], 0.5)
+                    continue
+
+                if lid in group_b: lg_ph = phase_now + math.pi
+                elif lid in group_a: lg_ph = phase_now
+                else: lg_ph = 0.0
+
+                sw_val = float(math.sin(lg_ph))
+                alpha = _ss(-0.30, 0.30, sw_val)
+                fv = ctx.fmap.get(lid, np.zeros(2))
+                dsign = -1.0 if float(np.dot(fv, lat)) > 0.0 else 1.0
+
+                base_scale = float(base_amps.get(str(lid), 1.0))
+                online_scale = float(online_scales.get(str(lid), 1.0))
+                eff_amp = SWING_AMP * base_scale * online_scale
+
+                lr = _sl + (_swl - _sl) * alpha
+                dr = _sd + (_swd - _sd) * alpha
+                sr = 0.5 + eff_amp * dsign * sw_val
+
+                is_sw = sw_val > 0.0
+                if not is_sw:
+                    if lid in touchdown_ramp:
+                        touchdown_ramp[lid] += 1
+                        rp = min(touchdown_ramp[lid] / 8, 1.0)
+                        if rp >= 1.0:
+                            del touchdown_ramp[lid]
+                        else:
+                            dl  = _rtj(j["lift_lower"],  j["lift_upper"],  0.5)
+                            dd  = _rtj(j["drop_lower"],  j["drop_upper"],  0.5)
+                            ds_ = j["swing_lower"] + 0.5 * (j["swing_upper"] - j["swing_lower"])
+                            targets[j["lift_idx"]]  = dl  + rp * (_rtj(j["lift_lower"],  j["lift_upper"],  lr) - dl)
+                            targets[j["drop_idx"]]  = dd  + rp * (_rtj(j["drop_lower"],  j["drop_upper"],  dr) - dd)
+                            targets[j["swing_idx"]] = ds_ + rp * (_rtj(j["swing_lower"], j["swing_upper"], sr) - ds_)
+                            continue
+                else:
+                    touchdown_ramp[lid] = 0
+
+                targets[j["lift_idx"]]  = _rtj(j["lift_lower"], j["lift_upper"], lr)
+                targets[j["drop_idx"]]  = _rtj(j["drop_lower"], j["drop_upper"], dr)
+                targets[j["swing_idx"]] = _rtj(j["swing_lower"], j["swing_upper"], sr)
+
+            gym.set_actor_dof_position_targets(env, actor, targets)
+            gym.simulate(sim)
+            gym.fetch_results(sim, True)
+
+            states = gym.get_actor_rigid_body_states(env, actor, ga.STATE_ALL)
+            if states is not None and len(states) > 0:
+                qw = float(states["pose"]["r"][0]["w"])
+                qx = float(states["pose"]["r"][0]["x"])
+                qy = float(states["pose"]["r"][0]["y"])
+                qz = float(states["pose"]["r"][0]["z"])
+                siny = 2.0 * (qw * qz + qx * qy)
+                cosy = 1.0 - 2.0 * (qy * qy + qz * qz)
+                yaw = math.atan2(siny, cosy)
+
+                p = states["pose"]["p"][0]
+                com_trail.append([float(p["x"]), float(p["y"])])
+                yaw_acc.append(float(states["vel"]["angular"][0]["z"]))
+
+                obs = make_observation(
+                    body_xy=[float(p["x"]), float(p["y"])],
+                    body_attitude=(0.0, 0.0, yaw),
+                    sim_time=sim_time, dt=_dt,
+                )
+                estimator.step(obs)
+
+            sim_time += _dt
+
+        valid = [v for v in yaw_acc if abs(v) < 20.0]
+        yaw_stats = {
+            "yaw_rate_mean": float(np.mean(valid)) if valid else 0.0,
+            "yaw_rate_std": float(np.std(valid)) if valid else 0.0,
+        }
+        return com_trail, fwd.tolist(), yaw_stats
 
 
 # ---------------------------------------------------------------------------
@@ -2739,8 +2823,44 @@ def main() -> None:
                 disp  = trail[-1] - trail[0] if len(trail) > 1 else np.zeros(2)
                 fwd_dist = float(np.dot(disp, fwd))
                 lat_dist = float(np.dot(disp, lat))
+                drift_ratio = abs(lat_dist) / max(abs(fwd_dist), 0.01)
+                strategy = "baseline"
                 print(f"  [Sim]  {robot_name}  steps={len(com_trail)}"
-                      f"  fwd={fwd_dist:+.3f}m  lat={lat_dist:+.3f}m")
+                      f"  fwd={fwd_dist:+.3f}m  lat={lat_dist:+.3f}m  "
+                      f"drift={drift_ratio:.2f}")
+
+                # ── EKF online fallback for high-drift robots ──────────────
+                if USE_ONLINE_EKF and drift_ratio > EKF_DRIFT_THRESHOLD and len(com_trail) > 1:
+                    try:
+                        print(f"    [EKF] drift={drift_ratio:.2f} > {EKF_DRIFT_THRESHOLD}, "
+                              f"trying online correction …", end=" ", flush=True)
+                        ekf_trail, ekf_fwd, ekf_stats = run_ekf_online_simulation(
+                            description, urdf_path, corrected_plan, EKF_PROBE_STEPS
+                        )
+                        if len(ekf_trail) > 1:
+                            ekf_arr = np.array(ekf_trail, dtype=float)
+                            ekf_fwd_v = np.asarray(ekf_fwd, dtype=float)
+                            ekf_fwd_v = ekf_fwd_v / max(float(np.linalg.norm(ekf_fwd_v)), 1e-9)
+                            ekf_disp = ekf_arr[-1] - ekf_arr[0]
+                            ekf_lat = np.array([-ekf_fwd_v[1], ekf_fwd_v[0]], dtype=float)
+                            ekf_fwd_d = float(np.dot(ekf_disp, ekf_fwd_v))
+                            ekf_lat_d = float(np.dot(ekf_disp, ekf_lat))
+                            ekf_drift = abs(ekf_lat_d) / max(abs(ekf_fwd_d), 0.01)
+
+                            if ekf_drift < drift_ratio:
+                                com_trail = ekf_trail
+                                forward_axis = ekf_fwd
+                                fwd_dist = ekf_fwd_d
+                                lat_dist = ekf_lat_d
+                                drift_ratio = ekf_drift
+                                strategy = "ekf_online"
+                                print(f"✓ improved: drift={ekf_drift:.2f}")
+                            else:
+                                print(f"✗ not better: drift={ekf_drift:.2f}")
+                        else:
+                            print("✗ failed")
+                    except Exception as e:
+                        print(f"✗ error: {e}")
 
                 out_img = robot_dir / "trajectory.png"
                 plot_demo(robot_name, description, ssm_result, com_trail, forward_axis,
@@ -2756,20 +2876,24 @@ def main() -> None:
                     "num_legs": description.get("num_legs"),
                     "fwd_dist": fwd_dist,
                     "lat_dist": lat_dist,
+                    "drift_ratio": round(drift_ratio, 3),
+                    "strategy": strategy,
                 })
 
 
     # ── Summary table ──
     print(f"\n{'='*60}")
     print(f"[Batch] Summary  ({out_root})")
-    print(f"{'Robot':<28} {'Status':<12} {'SSM':>7} {'Legs':>5} {'Fwd':>8} {'Lat':>8}")
-    print("-" * 72)
+    print(f"{'Robot':<28} {'Status':<12} {'SSM':>7} {'Legs':>5} {'Fwd':>8} {'Lat':>8} {'Drift':>7} {'Strategy':<14}")
+    print("-" * 95)
     for r in summary_rows:
         print(f"{r['robot']:<28} {r.get('status',''):<12} "
               f"{r.get('ssm', float('nan')):>7.3f} "
               f"{r.get('num_legs', '-'):>5} "
               f"{r.get('fwd_dist', float('nan')):>8.3f} "
-              f"{r.get('lat_dist', float('nan')):>8.3f}")
+              f"{r.get('lat_dist', float('nan')):>8.3f} "
+              f"{r.get('drift_ratio', float('nan')):>7.3f} "
+              f"{r.get('strategy', 'baseline'):<14}")
 
     # Save summary JSON
     summary_path = out_root / "summary.json"

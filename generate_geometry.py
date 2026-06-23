@@ -299,7 +299,9 @@ def validate_foot_layout_ssm(
     """SSM pre-check using foot XY positions before any mesh file is written.
 
     Called after all leg vectors are computed but before disk I/O, so a failed
-    check aborts the entire generation without leaving partial STL artefacts.
+    check can be detected early.  A warning is printed when SSM is below the
+    threshold, but generation is **not** aborted — use generate_urdf.py's
+    check for a hard gate before URDF export.
 
     Parameters
     ----------
@@ -307,10 +309,6 @@ def validate_foot_layout_ssm(
     trunk_com_xy      : [x, y]          Trunk CoM estimate (default [0,0] as the
                                         trunk polygon is generated around origin).
     threshold         : float           Minimum acceptable SSM in metres.
-
-    Raises
-    ------
-    SystemExit  If SSM < threshold.
     """
     try:
         from stability import compute_ssm

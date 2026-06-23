@@ -1,0 +1,76 @@
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Importing module 'gym_38' (/data/code/yjh/isaacgym/python/isaacgym/_bindings/linux-x86_64/gym_38.so)
+Setting GYM_USD_PLUG_INFO_PATH to /data/code/yjh/isaacgym/python/isaacgym/_bindings/linux-x86_64/usd/plugInfo.json
+======================================================================
+  方向C v3: 积分式在线偏航修正
+======================================================================
+[Load] robot_00_seed7: 10 legs
+[Load] robot_01_seed42: 4 legs
+[Load] robot_03_seed256: 7 legs
+[Load] robot_04_seed512: 6 legs
+
+============================================================
+  Robot: robot_00_seed7  (10 legs)
+============================================================
+[YawComp] net_yaw_nominal=1.1316  λ=0.2420  max_adj=0.168
+  [baseline] running … yaw=0.0108  lat=+0.069  (2.6s)
+  [+integral_yaw] running … Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+yaw=0.0403  lat=+0.027  accum_yaw=-18.4°  (2.6s)
+
+============================================================
+  Robot: robot_01_seed42  (4 legs)
+============================================================
+[YawComp] net_yaw_nominal=-0.3064  λ=-0.1699  max_adj=0.108
+  [baseline] running … yaw=0.0362  lat=-0.168  (1.6s)
+  [+integral_yaw] running … Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+yaw=0.0389  lat=-0.170  accum_yaw=10.2°  (1.7s)
+
+============================================================
+  Robot: robot_03_seed256  (7 legs)
+============================================================
+[YawComp] net_yaw_nominal=0.3941  λ=0.0985  max_adj=0.073
+  [baseline] running … yaw=0.0355  lat=-0.001  (2.3s)
+  [+integral_yaw] running … Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+yaw=0.0393  lat=-0.053  accum_yaw=13.2°  (2.4s)
+
+============================================================
+  Robot: robot_04_seed512  (6 legs)
+============================================================
+[Grouping] 标准六足对角三脚架: group_a=[5, 1, 3]  group_b=[0, 4, 2]
+[YawComp] net_yaw_nominal=0.4074  λ=0.2343  max_adj=0.130
+  [baseline] running … yaw=0.0097  lat=-0.019  (2.1s)
+  [+integral_yaw] running … yaw=0.0112  lat=-0.016  accum_yaw=-2.8°  (2.1s)
+
+=====================================================================================
+  方向C v3: 积分式在线偏航修正 — 汇总
+=====================================================================================
+条件                    mean|yaw|     ±std  mean|lat|    vs base
+--------------------------------------------------------------
+baseline                 0.0231    0.013     0.0641      +0.0%
++integral_yaw            0.0324    0.012     0.0664     -40.4%
+
+机器人                         baseline   +integral_yaw        改善
+--------------------------------------------------------------
+robot_00_seed7                0.0108          0.0403   -271.2%
+robot_01_seed42               0.0362          0.0389     -7.3%
+robot_03_seed256              0.0355          0.0393    -10.5%
+robot_04_seed512              0.0097          0.0112    -15.7%
+
+[Save] → /data/code/yjh/Adaptation/direction_c_v3_results/integral_yaw_20260623_124528.json
+[Done]

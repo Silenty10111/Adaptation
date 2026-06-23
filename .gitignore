@@ -1,6 +1,7 @@
 # Python caches
 __pycache__/
 *.pyc
+.pytest_cache/
 
 # Generated 3D meshes and URDF files
 meshes/
@@ -23,5 +24,13 @@ png/
 # 忽略 batch-result 文件夹
 batch_results/
 
-# 忽略 robot_results 文件夹
-robot_results/
+# 忽略 robot_assets 文件夹
+robot_assets/
+
+# 忽略实验输出
+ablation_results/
+iterations/
+search_results/
+
+# 忽略临时/调试脚本
+scratch/

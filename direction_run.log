@@ -1,0 +1,107 @@
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+Importing module 'gym_38' (/data/code/yjh/isaacgym/python/isaacgym/_bindings/linux-x86_64/gym_38.so)
+Setting GYM_USD_PLUG_INFO_PATH to /data/code/yjh/isaacgym/python/isaacgym/_bindings/linux-x86_64/usd/plugInfo.json
+======================================================================
+  方向 A vs 方向 C 对比实验
+  Python: /data/conda/envs/unitree-rl/bin/python
+======================================================================
+[Load] robot_00_seed7: 10 legs
+[Load] robot_01_seed42: 4 legs
+[Load] robot_03_seed256: 7 legs
+[Load] robot_04_seed512: 6 legs
+
+============================================================
+  Robot: robot_00_seed7  (10 legs)
+============================================================
+[YawComp] net_yaw_nominal=1.1316  λ=0.2420  max_adj=0.168
+[CentroidalWBC] net_yaw_before=0.1240  net_yaw_after≈-0.0011  GRF_net_tau=0.0000 N·m  total_mass=11.44 kg
+  [baseline] running … yaw=0.0108  lat=+0.069  fwd=+0.0925  (2.5s)
+  [+online] running … yaw=0.0449  lat=+0.040  fwd=-0.0140  (2.8s)
+  [+dynsym_sim] optimizing … [DynSymmetry] 初始: yaw_integral=0.2006  lat_integral=-0.2006  score=0.6135
+[DynSymmetry] 优化后: yaw_integral=0.0292  lat_integral=-0.0292  score=0.9304  converged=False
+    [DynSym+Sim] 初始 yaw_abs=0.0571 rad/s
+    [DynSym+Sim] 已达标，无需额外搜索
+    yaw=0.0423  lat=+0.031  fwd=-0.0155  (4.6s)
+  [+wbc_fixed] running … Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+yaw=0.0415  lat=+0.028  fwd=-0.0175  (2.4s)
+
+============================================================
+  Robot: robot_01_seed42  (4 legs)
+============================================================
+[YawComp] net_yaw_nominal=-0.3064  λ=-0.1699  max_adj=0.108
+[CentroidalWBC] net_yaw_before=-0.0494  net_yaw_after≈-0.0052  GRF_net_tau=0.0000 N·m  total_mass=13.72 kg
+  [baseline] running … yaw=0.0362  lat=-0.168  fwd=-0.0182  (1.6s)
+  [+online] running … yaw=0.0036  lat=-0.060  fwd=+0.0065  (1.9s)
+  [+dynsym_sim] optimizing … [DynSymmetry] 初始: yaw_integral=-0.1003  lat_integral=0.1003  score=0.5863
+[DynSymmetry] 优化后: yaw_integral=-0.0276  lat_integral=0.0276  score=0.8635  converged=False
+    [DynSym+Sim] 初始 yaw_abs=0.0085 rad/s
+    [DynSym+Sim] 已达标，无需额外搜索
+    yaw=0.0147  lat=-0.097  fwd=-0.0095  (2.9s)
+  [+wbc_fixed] running … Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+yaw=0.0268  lat=-0.142  fwd=-0.0170  (1.6s)
+
+============================================================
+  Robot: robot_03_seed256  (7 legs)
+============================================================
+[YawComp] net_yaw_nominal=0.3941  λ=0.0985  max_adj=0.073
+[CentroidalWBC] net_yaw_before=0.0640  net_yaw_after≈-0.0084  GRF_net_tau=0.0000 N·m  total_mass=10.83 kg
+  [baseline] running … yaw=0.0355  lat=-0.001  fwd=-0.0632  (2.3s)
+  [+online] running … yaw=0.0730  lat=-0.098  fwd=-0.0414  (2.6s)
+  [+dynsym_sim] optimizing … [DynSymmetry] 初始: yaw_integral=0.1149  lat_integral=-0.1149  score=0.7068
+[DynSymmetry] 优化后: yaw_integral=0.0186  lat_integral=-0.0186  score=0.9452  converged=False
+    [DynSym+Sim] 初始 yaw_abs=0.0062 rad/s
+    [DynSym+Sim] 已达标，无需额外搜索
+    yaw=0.0308  lat=+0.025  fwd=+0.0057  (3.5s)
+  [+wbc_fixed] running … Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: disabled
+yaw=0.0274  lat=+0.032  fwd=+0.0042  (1.9s)
+
+============================================================
+  Robot: robot_04_seed512  (6 legs)
+============================================================
+[Grouping] 标准六足对角三脚架: group_a=[5, 1, 3]  group_b=[0, 4, 2]
+[YawComp] net_yaw_nominal=0.4074  λ=0.2343  max_adj=0.130
+[CentroidalWBC] net_yaw_before=0.0136  net_yaw_after≈-0.0030  GRF_net_tau=0.0000 N·m  total_mass=10.85 kg
+  [baseline] running … yaw=0.0097  lat=-0.019  fwd=-0.0142  (2.1s)
+  [+online] running … yaw=0.0002  lat=-0.032  fwd=-0.0126  (2.3s)
+  [+dynsym_sim] optimizing … [DynSymmetry] 初始: yaw_integral=0.0093  lat_integral=-0.0093  score=0.9651
+[DynSymmetry] 对称性已足够好，跳过优化。
+    [DynSym+Sim] 初始 yaw_abs=0.0027 rad/s
+    [DynSym+Sim] 已达标，无需额外搜索
+    yaw=0.0031  lat=-0.029  fwd=-0.0115  (3.6s)
+  [+wbc_fixed] running … yaw=0.0097  lat=-0.016  fwd=-0.0146  (2.1s)
+
+==========================================================================================
+  方向 A vs 方向 C — 汇总对比
+==========================================================================================
+条件                mean|yaw|     ±std  mean|lat|   mean fwd    vs base
+---------------------------------------------------------------------
+baseline             0.0231    0.013     0.0641    -0.0008      +0.0%
++online              0.0304    0.030     0.0576    -0.0154     -31.8%
++dynsym_sim          0.0227    0.015     0.0455    -0.0077      +1.6%
++wbc_fixed           0.0264    0.011     0.0545    -0.0112     -14.1%
+
+机器人                       baseline       +online   +dynsym_sim    +wbc_fixed
+----------------------------------------------------------------------------
+robot_00_seed7              0.0108        0.0449        0.0423        0.0415
+robot_01_seed42             0.0362        0.0036        0.0147        0.0268
+robot_03_seed256            0.0355        0.0730        0.0308        0.0274
+robot_04_seed512            0.0097        0.0002        0.0031        0.0097
+
+[Save] → /data/code/yjh/Adaptation/direction_results/direction_compare_20260623_115134.json
+[Done]
