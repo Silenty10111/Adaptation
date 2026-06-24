@@ -198,12 +198,50 @@ def compute_adaptive_plan(
     minor_axis = _unit(np.array([-major_axis[1], major_axis[0]], dtype=float))
     candidate_axes = [major_axis, -major_axis, minor_axis, -minor_axis]
 
+    # ---- Trunk main axis (fixed reference for swing direction) ------------------
+    trunk_pts = []
+    if "trunk_polygon_xy" in description:
+        trunk_pts = np.array(description["trunk_polygon_xy"], dtype=float)
+    if len(trunk_pts) < 3:
+        bl = float(description.get("body_length", 0.72))
+        bw = float(description.get("body_width", 0.44))
+        trunk_pts = np.array([
+            [-bl/2, -bw/2], [bl/2, -bw/2], [bl/2, bw/2], [-bl/2, bw/2]
+        ], dtype=float)
+    trunk_center = trunk_pts.mean(axis=0)
+    trunk_centered = trunk_pts - trunk_center
+    trunk_cov = trunk_centered.T @ trunk_centered / len(trunk_pts)
+    trunk_eigvals, trunk_eigvecs = np.linalg.eigh(trunk_cov)
+    trunk_main = trunk_eigvecs[:, -1] / max(float(np.linalg.norm(trunk_eigvecs[:, -1])), EPS)
+    trunk_lat  = np.array([-trunk_main[1], trunk_main[0]], dtype=float)
+
+    def _fixed_swing_dir(leg_id: int) -> np.ndarray:
+        """Fixed-frame swing direction using TRUNK lateral axis for dsign.
+
+        Unlike _gait_swing_dir, does NOT depend on candidate forward axis.
+        Breaks the self-referential loop that made +/- axis scores identical.
+        """
+        hip = hip_xy.get(leg_id)
+        foot = foot_xy.get(leg_id)
+        if hip is None or foot is None:
+            return np.array([0.0, 0.0], dtype=float)
+        h2f = foot - hip
+        reach = float(np.linalg.norm(h2f))
+        if reach < EPS:
+            return np.array([0.0, 0.0], dtype=float)
+        lat_p = float(np.dot(foot, trunk_lat))
+        dsign = -1.0 if lat_p > 0.0 else 1.0
+        if dsign > 0:
+            return np.array([-h2f[1],  h2f[0]], dtype=float)
+        else:
+            return np.array([ h2f[1], -h2f[0]], dtype=float)
+
     # ---- Phase-1 torque-aware scoring of ±axis -------------------------------
     def _build_default_swing_vector(leg_id: int) -> np.ndarray:
         """Return the swing vector for this leg for plan output (uses final axis).
 
         This is kept for backward compatibility (plan["swing_vector"] field).
-        Direction scoring uses _gait_swing_dir() instead.
+        Direction scoring uses _fixed_swing_dir() instead.
         """
         hip = hip_xy.get(leg_id)
         foot = foot_xy.get(leg_id)
@@ -269,7 +307,7 @@ def compute_adaptive_plan(
             if swing_raw is not None:
                 v = np.asarray(swing_raw, dtype=float)[:2].copy()
             else:
-                v = _gait_swing_dir(leg_id, direction)
+                v = _fixed_swing_dir(leg_id)
             v_norm = float(np.linalg.norm(v))
             if v_norm < EPS:
                 continue
@@ -329,7 +367,7 @@ def compute_adaptive_plan(
             if swing_raw is not None:
                 sv = np.asarray(swing_raw, dtype=float)[:2].copy()
             else:
-                sv = _gait_swing_dir(leg_id, direction)
+                sv = _fixed_swing_dir(leg_id)
             v_proj = float(np.dot(sv, direction))
             if v_proj <= 0.0:
                 continue
@@ -350,6 +388,9 @@ def compute_adaptive_plan(
         YAW_BALANCE_WEIGHT = 0.8
         score -= YAW_BALANCE_WEIGHT * abs(net_yaw_torque)
 
+        # Trunk alignment — mild preference for body natural forward direction.
+        score += 0.15 * float(np.dot(direction, trunk_main))
+
         return score
 
     pos_score = _score_direction(major_axis)  # for report only
@@ -361,11 +402,10 @@ def compute_adaptive_plan(
         final_axis = _unit(np.asarray(forced_axis[:2], dtype=float))
         best_score = _score_direction(final_axis)
     else:
-        _X_PRIOR = 0.04
         best_score = -1e18
         final_axis = major_axis.copy()
         for cand in candidate_axes:
-            s = _score_direction(cand) + _X_PRIOR * float(np.dot(cand, [1.0, 0.0]))
+            s = _score_direction(cand)
             if s > best_score:
                 best_score = s
                 final_axis = cand.copy()

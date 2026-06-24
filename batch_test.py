@@ -11,7 +11,7 @@ from __future__ import annotations
 # ─────────────────────────── 配置区（直接在这里改参数）──────────────────────
 
 # 要生成的机器人数量
-NUM_ROBOTS = 500
+NUM_ROBOTS = 100
 
 # 随机种子列表（优先使用此列表；若列表比 NUM_ROBOTS 短则自动补充随机种子）
 SEEDS = [7, 42, 137, 256, 512]
@@ -53,8 +53,8 @@ INCLUDE_STANDARD_HEXAPOD = True
 USE_GPU = True
 
 # GPU 并行批量大小 — 每次并行仿真的机器人数
-# 最终仿真阶段将机器人按此大小分批，在一个 GPU sim 里同时跑
-GPU_BATCH_SIZE = 8
+# 8→4: 减少单sim内存压力, 更多子批次但GPU内存更稳定
+GPU_BATCH_SIZE = 4
 
 # 输出根目录
 OUTPUT_DIR           = "batch_results"
@@ -2184,7 +2184,10 @@ def generate_batch_report(out_root: Path, summary_rows: List[dict]) -> Path:
 
     fwd_mean = sum(fwd_vals) / len(fwd_vals) if fwd_vals else 0
     lat_mean = sum(lat_vals) / len(lat_vals) if lat_vals else 0
-    drift_mean = sum(drift_vals) / len(drift_vals) if drift_vals else 0
+    drift_vals_md = [r.get("drift_ratio", abs(r["lat_dist"])/max(abs(r["fwd_dist"]),0.01))
+                     for r in ok_rows if r.get("fwd_dist", 0) != 0] if ok_rows else [0.0]
+    drift_mean = sum(drift_vals_md) / len(drift_vals_md) if drift_vals_md else 0
+    ekf_count = sum(1 for r in ok_rows if r.get("strategy") == "ekf_online")
     lines += [
         f"**平均前进距离**: {fwd_mean:+.3f} m，**平均偏移**: {lat_mean:.3f} m",
         f"**平均漂移比**: {drift_mean:.3f}（越小越直；< 0.3 视为良好）",
@@ -2807,6 +2810,9 @@ def main() -> None:
                     for info in batch
                 ]
                 sim_results = [([], [1.0, 0.0])] * len(batch)
+
+            # GPU memory stabilization between sub-batches
+            time.sleep(0.5)
 
             for info, (corrected_plan, forward_axis), (com_trail, _) in zip(
                 batch, probe_results, sim_results
