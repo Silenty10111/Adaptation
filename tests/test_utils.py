@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np
 import pytest
 
-from utils import (
+from adaptation.utils import (
     ratio_to_joint,
     smoothstep,
     quat_to_euler,

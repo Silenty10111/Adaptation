@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for the stability module (SSM computation)."""
+"""Tests for the adaptation.stability module (SSM computation)."""
 
 import sys
 from pathlib import Path
@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np
 import pytest
 
-from stability import (
+from adaptation.stability import (
     _signed_polygon_area,
     _ensure_ccw,
     compute_projected_com_xy,
