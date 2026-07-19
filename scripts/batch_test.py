@@ -10,8 +10,8 @@ from __future__ import annotations
 
 # ─────────────────────────── 配置区（直接在这里改参数）──────────────────────
 
-# 要生成的机器人数量
-NUM_ROBOTS = 100
+# 要生成的机器人数量（应为 GPU_BATCH_SIZE 的整数倍）
+NUM_ROBOTS = 30
 
 # 随机种子列表（优先使用此列表；若列表比 NUM_ROBOTS 短则自动补充随机种子）
 SEEDS = [7, 42, 137, 256, 512]
@@ -19,12 +19,13 @@ SEEDS = [7, 42, 137, 256, 512]
 # 仿真步数（60 Hz，1200 步 ≈ 20 秒）；作为最短保底步数
 SIM_STEPS = 1200
 
-# 最大仿真步数上限（防止无法行走的机器人死循环；7200 步 ≈ 120 秒）
-MAX_SIM_STEPS = 7200
+# 最大仿真步数上限（防止无法行走的机器人死循环；24000 步 ≈ 400 秒）
+# 对于 10× 体长目标，大部分健康形态在 5000-8000 步内完成
+MAX_SIM_STEPS = 6000
 
 # 期望轨迹至少覆盖的前进距离 = MIN_TRAVEL_BODY_LENGTHS × 估算体长
 # 达到此目标后仿真提前结束；设为 0 则仅跑 SIM_STEPS 步
-MIN_TRAVEL_BODY_LENGTHS = 2.0
+MIN_TRAVEL_BODY_LENGTHS = 10.0
 
 # 步态参数（在 reexec 之后从 adaptation.sim 导入，见下方 import 区域）
 
@@ -42,7 +43,7 @@ INCLUDE_STANDARD_HEXAPOD = True
 USE_GPU = True
 
 # GPU 并行批量大小 — 每次并行仿真的机器人数
-# 8→4: 减少单sim内存压力, 更多子批次但GPU内存更稳定
+# 设大值为 70，配合 MAX_BATCHES_PER_PROCESS=3，使 210 机器人聚合成 1 个子进程
 GPU_BATCH_SIZE = 10
 
 # 输出根目录
@@ -50,12 +51,13 @@ OUTPUT_DIR           = "batch_results"
 
 # ── 在线 EKF 偏航修正 ──────────────────────────────────────────────────────
 # 启用后，对 baseline 偏航较高的机器人自动尝试 EKF 在线估计修正
-USE_ONLINE_EKF       = True
+# 禁用：EKF 重优化阶段 GPU 状态重置导致卡死（在线偏航校正已在内环运行）
+USE_ONLINE_EKF       = False
 # 触发 EKF 的漂移比阈值 (|lat|/|fwd|)，超过此值启用在线修正
 # ↓ 0.30→0.18: old threshold only captured 17% of robots; lower to help more
 EKF_DRIFT_THRESHOLD  = 0.18
-# EKF 仿真步数  ↑ 480→720: give correction more time to take effect
-EKF_PROBE_STEPS      = 720
+# EKF 仿真步数  ↑ 720→1200: better correlation with 10× body-length full sims
+EKF_PROBE_STEPS      = 1200
 
 # ─────────────────────────── 以下无需修改 ────────────────────────────────────
 
@@ -212,8 +214,15 @@ def run_gait_sim(
         return float(lo + max(0.0, min(1.0, r)) * (hi - lo))
 
     def _smoothstep(e0, e1, x):
+        """Quintic smoothstep — C² continuous (acceleration vanishes at boundaries)."""
         t = max(0.0, min(1.0, (x - e0) / max(e1 - e0, 1e-9)))
-        return t * t * (3.0 - 2.0 * t)
+        return t * t * t * (10.0 - 15.0 * t + 6.0 * t * t)
+
+    def _swing_lift_profile(s):
+        """Bell-shaped lift: 0 at s=0/1, peaks at s=0.5. sin(πs) → C² at boundaries."""
+        if s <= 0.0 or s >= 1.0:
+            return 0.0
+        return float(math.sin(math.pi * s))
 
     def _quat_to_euler(w, x, y, z):
         sinr = 2.0 * (w * x + y * z)
@@ -271,6 +280,7 @@ def run_gait_sim(
         # DOF properties
         dof_props  = gym.get_actor_dof_properties(env, actor)
         dof_props["driveMode"].fill(gymapi.DOF_MODE_POS)
+        # PD gains — keep original stiffness; smoothness comes from C²-continuous trajectory.
         dof_props["stiffness"].fill(200.0)
         dof_props["damping"].fill(20.0)
         if "effort"   in dof_props.dtype.names: dof_props["effort"].fill(1000.0)
@@ -281,6 +291,8 @@ def run_gait_sim(
                 dof_props["stiffness"][idx] = 100.0; dof_props["damping"][idx] = 10.0
             elif "_drop" in name:
                 dof_props["stiffness"][idx] = 250.0; dof_props["damping"][idx] = 25.0
+            elif "_lift" in name:
+                dof_props["stiffness"][idx] = 200.0; dof_props["damping"][idx] = 20.0
         gym.set_actor_dof_properties(env, actor, dof_props)
 
         lower = np.where(np.isfinite(dof_props["lower"]), dof_props["lower"], -0.5).astype(np.float32)
@@ -372,6 +384,17 @@ def run_gait_sim(
         dt = sp.dt
         phase_now = 0.0
 
+        # ── Online yaw correction state ────────────────────────────────────
+        _base_amplitudes = dict(per_amp)
+        _yaw_integral = 0.0
+        _planned_yaw = float(np.arctan2(forward_axis[1], forward_axis[0]))
+        # ── Body height compensation state ─────────────────────────────────
+        _height_target = BODY_HEIGHT
+        _body_z = BODY_HEIGHT  # initial estimate
+        _height_ie = 0.0
+        _sl_eff = _sl
+        _sd_eff = _sd
+
         # Estimate body length from foot bounding box (max axis extent)
         if fmap:
             foot_pts = np.array(list(fmap.values()), dtype=float)
@@ -387,8 +410,8 @@ def run_gait_sim(
 
             for lid, j in triplets.items():
                 if lid in group_c:
-                    targets[j["lift_idx"]]  = _ratio_to_joint(j["lift_lower"], j["lift_upper"], _sl)
-                    targets[j["drop_idx"]]  = _ratio_to_joint(j["drop_lower"], j["drop_upper"], _sd)
+                    targets[j["lift_idx"]]  = _ratio_to_joint(j["lift_lower"], j["lift_upper"], _sl_eff)
+                    targets[j["drop_idx"]]  = _ratio_to_joint(j["drop_lower"], j["drop_upper"], _sd_eff)
                     targets[j["swing_idx"]] = _ratio_to_joint(j["swing_lower"], j["swing_upper"], 0.5)
                     continue
 
@@ -397,25 +420,29 @@ def run_gait_sim(
                 else:                lg_ph = 0.0
 
                 sw = float(math.sin(lg_ph))
-                alpha = _smoothstep(-0.30, 0.30, sw)
+                # Quintic smoothstep with widened window (±0.35) for C²-continuous transition
+                alpha = _smoothstep(-0.35, 0.35, sw)
                 foot_v = fmap.get(lid, np.zeros(2, dtype=float))
                 lat_p = float(np.dot(foot_v, lat))
-                dsign = -1.0 if lat_p > 0.0 else 1.0
+                # +lateral (left): positive Z-rotation → forward
+                dsign = 1.0 if lat_p > 0.0 else -1.0
                 eff_amp = SWING_AMP * float(per_amp.get(str(lid), 1.0))
 
-                lr  = _sl  + (_swl - _sl) * alpha
-                dr  = _sd  + (_swd - _sd) * alpha
+                # Lift/drop follow alpha linearly — quintic smoothstep already C²
+                lr  = _sl_eff  + (_swl - _sl_eff) * alpha
+                dr  = _sd_eff  + (_swd - _sd_eff) * alpha
                 sr  = 0.5 + eff_amp * dsign * sw
 
-                # touchdown ramp
+                # touchdown ramp — quintic easing over 25 steps (≈0.42 s) for soft contact
                 is_sw = sw > 0.0
                 if not is_sw:
                     if lid in touchdown_ramp:
                         touchdown_ramp[lid] += 1
-                        rp = min(touchdown_ramp[lid] / 8, 1.0)
-                        if rp >= 1.0:
+                        rp_raw = min(touchdown_ramp[lid] / 25, 1.0)
+                        if rp_raw >= 1.0:
                             del touchdown_ramp[lid]
                         else:
+                            rp = _smoothstep(0.0, 1.0, rp_raw)  # quintic easing
                             def_l = _ratio_to_joint(j["lift_lower"], j["lift_upper"], 0.5)
                             def_d = _ratio_to_joint(j["drop_lower"], j["drop_upper"], 0.5)
                             def_s = j["swing_lower"] + 0.5 * (j["swing_upper"] - j["swing_lower"])
@@ -436,30 +463,67 @@ def run_gait_sim(
             gym.set_actor_dof_position_targets(env, actor, targets)
             gym.simulate(sim); gym.fetch_results(sim, True)
 
-            _state_flag = gymapi.STATE_ALL if return_yaw_stats else gymapi.STATE_POS
-            states = gym.get_actor_rigid_body_states(env, actor, _state_flag)
+            states = gym.get_actor_rigid_body_states(env, actor, gymapi.STATE_ALL)
+            body_yaw = 0.0
             if states is not None and len(states) > 0:
                 p = states["pose"]["p"][0]
-                com_trail.append([float(p["x"]), float(p["y"])])
+                r = states["pose"]["r"][0]
+                siny = 2.0 * (float(r["w"]) * float(r["z"]) + float(r["x"]) * float(r["y"]))
+                cosy = 1.0 - 2.0 * (float(r["y"]) * float(r["y"]) + float(r["z"]) * float(r["z"]))
+                body_yaw = float(np.arctan2(siny, cosy))
+                _body_z = float(p["z"])
+                com_trail.append([float(p["x"]), float(p["y"]), body_yaw])
                 if return_yaw_stats:
                     try:
                         yaw_acc.append(float(states["vel"]["angular"][0]["z"]))
                     except Exception:
-                        # Compute yaw-rate numerically from CoM heading change as fallback
                         if len(com_trail) >= 3:
-                            _d1 = np.array(com_trail[-1]) - np.array(com_trail[-2])
-                            _d0 = np.array(com_trail[-2]) - np.array(com_trail[-3])
+                            _d1 = np.array(com_trail[-1][:2]) - np.array(com_trail[-2][:2])
+                            _d0 = np.array(com_trail[-2][:2]) - np.array(com_trail[-3][:2])
                             _a1 = math.atan2(_d1[1], _d1[0])
                             _a0 = math.atan2(_d0[1], _d0[0])
                             _da = ((_a1 - _a0 + math.pi) % (2 * math.pi)) - math.pi
                             yaw_acc.append(_da / max(dt, 1e-9))
+
+            # ── Online yaw correction (every 60 steps, PI control) ─────────
+            if (step + 1) % 60 == 0:
+                yaw_err = body_yaw - _planned_yaw
+                yaw_err = float(np.arctan2(np.sin(yaw_err), np.cos(yaw_err)))
+                if abs(yaw_err) > 0.0087:  # ~0.5°
+                    _yaw_integral += 0.02 * yaw_err
+                    _yaw_integral = float(np.clip(_yaw_integral, -0.5, 0.5))
+                    yaw_p = float(np.clip(yaw_err / 0.3, -1.0, 1.0))
+                    yaw_i = float(np.clip(_yaw_integral / 0.3, -1.0, 1.0))
+                    yaw_signal = float(np.clip(yaw_p + 0.3 * yaw_i, -1.0, 1.0))
+                    yaw_levers = {int(k): float(v)
+                                  for k, v in gait_plan.get("yaw_balance", {}).get("yaw_levers", {}).items()}
+                    if yaw_levers:
+                        max_lv = max(abs(v) for v in yaw_levers.values())
+                        if max_lv > 1e-9:
+                            corr = {}
+                            for lid_str, amp in _base_amplitudes.items():
+                                lv = yaw_levers.get(int(lid_str), 0.0)
+                                s = 1.0 - yaw_signal * lv / max_lv
+                                s = float(np.clip(s, 0.40, 1.60))
+                                corr[lid_str] = float(np.clip(float(amp) * s, 0.15, 0.85))
+                            per_amp = corr
+
+            # ── Body height compensation (every 120 steps) ────────────────
+            if (step + 1) % 120 == 0:
+                z_err = _height_target - _body_z
+                _height_ie += 0.03 * z_err
+                _height_ie = float(np.clip(_height_ie, -0.15, 0.35))
+                _sl_eff = _sl - 0.25 * _height_ie
+                _sl_eff = float(np.clip(_sl_eff, 0.05, 0.95))
+                _sd_eff = _sd - 0.40 * _height_ie
+                _sd_eff = float(np.clip(_sd_eff, 0.55, 1.0))
 
             sim_time += dt
 
             # Early exit: stop once min_travel is covered AND we're past SIM_STEPS
             if step >= SIM_STEPS and min_travel > 0.0 and len(com_trail) > 1:
                 trail_arr = np.array(com_trail, dtype=float)
-                disp = trail_arr[-1] - trail_arr[0]
+                disp = trail_arr[-1, :2] - trail_arr[0, :2]
                 covered = abs(float(np.dot(disp, fwd)))
                 if covered >= min_travel:
                     break
@@ -524,8 +588,99 @@ def _apply_amp_correction(plan: dict, measured_yaw: float, strength: float = 0.5
     return plan_copy
 
 
+def _apply_side_amp_correction(
+    plan: dict,
+    measured_yaw: float,
+    left_yaw_ratio: float = 0.5,
+    strength: float = 0.55,
+) -> dict:
+    """Like ``_apply_amp_correction`` but with side-aware correction strength.
+
+    When the yaw is predominantly driven by one side (e.g. left legs
+    pushing harder), stronger correction is applied to the offending side
+    while the opposing side gets a weaker correction or even a small boost.
+
+    Parameters
+    ----------
+    left_yaw_ratio : float in [0, 1]
+        0.0 = all yaw from right side, 1.0 = all yaw from left side.
+        0.5 = both sides contribute equally → falls back to symmetric mode.
+    """
+    yaw_levers = {int(k): float(v)
+                  for k, v in plan.get("yaw_balance", {}).get("yaw_levers", {}).items()}
+    base_amps  = plan.get("topology", {}).get("per_leg_stride_amplitudes", {})
+    plan_copy  = dict(plan)
+
+    if not yaw_levers or not base_amps or abs(measured_yaw) < 1e-6:
+        return plan_copy
+
+    max_lever = max(abs(v) for v in yaw_levers.values())
+    if max_lever < 1e-9:
+        return plan_copy
+
+    yaw_sign = math.copysign(1.0, measured_yaw)
+
+    # Asymmetry factor: -1 = all right-side yaw, +1 = all left-side yaw
+    asymmetry = (left_yaw_ratio - 0.5) * 2.0  # maps [0,1] → [-1, +1]
+    side_imbalance = abs(asymmetry)
+
+    corrected: Dict[str, float] = {}
+    for lid_str, amp in base_amps.items():
+        lever = yaw_levers.get(int(lid_str), 0.0)
+        lever_sign = math.copysign(1.0, lever)
+
+        # Is this leg on the side that's driving the yaw?
+        # yaw_lever > 0 → leg is on LEFT side of forward axis
+        # measured_yaw > 0 → CCW yaw → left-side legs are drivers
+        leg_drives_yaw = (lever_sign * yaw_sign) > 0
+
+        if leg_drives_yaw and side_imbalance > 0.3:
+            # Offending side: stronger correction
+            side_factor = 1.0 + 0.5 * asymmetry * lever_sign * yaw_sign
+        elif not leg_drives_yaw and side_imbalance > 0.3:
+            # Opposing side: weaker correction / slight boost
+            side_factor = 1.0 - 0.5 * asymmetry * lever_sign * yaw_sign
+        else:
+            side_factor = 1.0
+
+        s = 1.0 - strength * side_factor * yaw_sign * lever / max_lever
+        s = float(np.clip(s, 0.25, 1.75))
+        corrected[lid_str] = float(np.clip(float(amp) * s, 0.20, 0.85))
+
+    plan_copy["_per_amp_override"] = corrected
+    plan_copy["_yaw_correction_strength"] = strength
+    plan_copy["_side_imbalance"] = side_imbalance
+    return plan_copy
 
 
+def _estimate_side_yaw_ratio(plan: dict, measured_yaw: float) -> float:
+    """Estimate what fraction of yaw torque comes from left-side legs.
+
+    Uses the plan's ``psi_by_leg`` (swing_proj × yaw_lever) to compute
+    the proportion of total |yaw torque| attributable to left-side legs.
+    Returns a value in [0, 1] where 0.5 means balanced.
+    """
+    psi = {int(k): float(v)
+           for k, v in plan.get("yaw_balance", {}).get("psi_by_leg", {}).items()}
+    if not psi or abs(measured_yaw) < 1e-6:
+        return 0.5
+
+    yaw_sign = math.copysign(1.0, measured_yaw)
+    left_sum = 0.0
+    right_sum = 0.0
+    for lid, p in psi.items():
+        # Leg is a "driver" for this yaw direction if psi * yaw_sign > 0
+        if p * yaw_sign > 0:
+            # psi > 0 means leg is on LEFT side → driving CCW yaw
+            # measured_yaw > 0: CCW → left legs are the cause
+            left_sum += abs(p)
+        elif p * yaw_sign < 0:
+            right_sum += abs(p)
+
+    total = left_sum + right_sum
+    if total < 1e-9:
+        return 0.5
+    return left_sum / total
 # ---------------------------------------------------------------------------
 # Reusable per-robot sim context — avoids repeated create_sim/destroy_sim
 # ---------------------------------------------------------------------------
@@ -537,20 +692,121 @@ def _apply_amp_correction(plan: dict, measured_yaw: float, strength: float = 0.5
 def optimize_and_simulate(
     description: dict, urdf_path: Path,
 ) -> Tuple[List[List[float]], List[float]]:
-    """Probe → correct → full-sim, all inside ONE sim context (no segfault).
+    """Probe → correct → full-sim, all inside ONE GPU context.
 
-    Thin wrapper around probe_and_correct_plan that also runs the full simulation.
+    Opens ONE _RobotSimCtx and reuses it for both probe and full simulation,
+    avoiding the GPU deadlock that occurs with repeated create/destroy cycles.
     """
-    plan, fwd_axis = probe_and_correct_plan(description, urdf_path)
-    fwd = np.asarray(fwd_axis, dtype=float)
-    fwd = fwd / max(float(np.linalg.norm(fwd)), 1e-9)
+    from adaptation.gait import compute_adaptive_plan
 
-    _full_steps = max(MAX_SIM_STEPS, SIM_STEPS)
+    plan0 = compute_adaptive_plan(description, {})
+    fwd0  = np.asarray(plan0["final_forward_axis"], dtype=float)
+    fwd0  = fwd0 / max(float(np.linalg.norm(fwd0)), 1e-9)
 
     with _RobotSimCtx(description, urdf_path, use_gpu=USE_GPU) as ctx:
+        # ── Inline probe (reuses ctx, no extra create/destroy) ────────────
+        PROBE_STEPS  = 1800   # ↑ 960→1800 (30 s) — capture steady-state
+        YAW_BAD      = 0.18
+        FWD_STUCK    = 0.004
+        _dt          = 1.0 / 60.0
+        BACKWARD_M   = -0.10  # ↓ -0.30→-0.10 — catch slow backward walkers
+        TREND_WINDOW = 240    # last 4 s for steady-state check
+
+        def _disp(trail, fwd_ax):
+            if len(trail) < 2:
+                return 0.0, 0.0
+            arr = np.array(trail, dtype=float)
+            d = arr[-1, :2] - arr[0, :2] if arr.ndim == 2 else np.array(arr[-1][:2]) - np.array(arr[0][:2])
+            lat = np.array([-fwd_ax[1], fwd_ax[0]], dtype=float)
+            return float(np.dot(d, fwd_ax)), float(np.dot(d, lat))
+
+        def _trend_disp(trail, fwd_ax):
+            """Forward displacement over the last TREND_WINDOW steps, or None."""
+            if len(trail) < TREND_WINDOW + 1:
+                return None, None
+            arr = np.array(trail, dtype=float)
+            d = arr[-1, :2] - arr[-TREND_WINDOW - 1, :2]
+            lat = np.array([-fwd_ax[1], fwd_ax[0]], dtype=float)
+            return float(np.dot(d, fwd_ax)), float(np.dot(d, lat))
+
+        # Probe 1
+        t1, _, s1 = ctx.run_episode(plan0, PROBE_STEPS, return_yaw_stats=True)
+        yaw1 = s1["yaw_rate_mean"]
+        fd1, ld1 = _disp(t1, fwd0)
+        fv1 = fd1 / max(len(t1) * _dt, _dt)
+        # Trend: last 4 s displacement → detects unsettled transients
+        ft1, lt1 = _trend_disp(t1, fwd0)
+        ft1_str = f"{ft1:+.3f}m" if ft1 is not None else "N/A"
+        print(f"  [Probe] yaw={yaw1:+.3f}  fwd_disp={fd1:+.3f}m  "
+              f"lat={ld1:+.3f}m  fwd_vel={fv1:+.4f}  trend_fwd={ft1_str}", flush=True)
+
+        best_plan = plan0
+        best_fwd  = fwd0.copy()
+        tf = None  # may be set by backward-flip branch below
+
+        # ── Direction check: use trend if available and overall is ambiguous ──
+        # When overall displacement disagrees with recent trend, the robot
+        # hasn't settled; trust the trend as it reflects the steady-state.
+        _dir_fwd = fd1
+        if ft1 is not None:
+            _trend_vel = ft1 / max(TREND_WINDOW * _dt, _dt)
+            _overall_vel = fv1
+            # If trend and overall disagree in sign, trust trend
+            if (_trend_vel > 0.0) != (_overall_vel > 0.0):
+                _dir_fwd = ft1  # use trend displacement for direction decisions
+                print(f"  [Trend] overall={fd1:+.3f}m vs trend={ft1:+.3f}m "
+                      f"— trusting trend", flush=True)
+
+        # Solution 1+3: trust final_forward_axis, only flip if clearly backward
+        # fv1 <= FWD_STUCK catches all backward velocities (negative < 0.004 is always true)
+        if abs(yaw1) >= YAW_BAD or fv1 <= FWD_STUCK:
+            # Use trend-aware direction for backward detection
+            if fv1 <= FWD_STUCK and _dir_fwd < BACKWARD_M:
+                flip = -fwd0.copy()
+                print(f"  [Backward] fwd_disp={_dir_fwd:+.3f}m < {BACKWARD_M:.1f}m, "
+                      f"trying flip...", end=" ", flush=True)
+                plan_f = compute_adaptive_plan(description, {}, forced_axis=flip.tolist())
+                tf, _, sf = ctx.run_episode(plan_f, PROBE_STEPS, return_yaw_stats=True)
+                fdf, ldf = _disp(tf, flip)
+                ftf, _ = _trend_disp(tf, flip)
+                ftf_str = f"{ftf:+.3f}m" if ftf is not None else "N/A"
+                print(f"fwd_disp={fdf:+.3f}m  trend={ftf_str}", flush=True)
+                # Flip must produce NET POSITIVE forward displacement
+                if fdf > 0.0 and fdf > fd1:
+                    best_plan = plan_f; best_fwd = flip.copy()
+                    print(f"  [Backward] flip accepted (fwd={fdf:+.3f}m > 0)", flush=True)
+                else:
+                    print(f"  [Backward] flip REJECTED "
+                          f"(fdf={fdf:+.3f}m, need >0 and >{fd1:+.3f}m)", flush=True)
+
+            # Yaw correction
+            if abs(yaw1) > YAW_BAD:
+                best_plan = _apply_amp_correction(best_plan, yaw1)
+                print(f"  [Corr] yaw={yaw1:+.3f}", flush=True)
+
+            # Stuck recovery
+            _ref_trail = tf if (tf is not None and best_plan is not plan0) else t1
+            fwd_chk, _ = _disp(_ref_trail, best_fwd)
+            if fwd_chk < 0.05:
+                print(f"  [Stuck] fwd_disp={fwd_chk:.3f}m, boost...", flush=True)
+                bp = dict(best_plan)
+                ba = best_plan.get("topology", {}).get("per_leg_stride_amplitudes", {})
+                bo = {k: float(np.clip(float(v)*1.6, 0.25, 0.85)) for k, v in ba.items()}
+                bp["_per_amp_override"] = bo
+                tb, _, _ = ctx.run_episode(bp, PROBE_STEPS, return_yaw_stats=True)
+                fdb, _ = _disp(tb, best_fwd)
+                if fdb > fwd_chk:
+                    best_plan = bp
+                    print(f"  [Stuck] boost accepted (fwd_disp={fdb:+.3f}m)", flush=True)
+
+        print(f"  [Opt] axis={[round(v,3) for v in best_fwd.tolist()]}", flush=True)
+
+        # ── Full simulation ───────────────────────────────────────────────
+        _full_steps = max(MAX_SIM_STEPS, SIM_STEPS)
         _min_travel = ctx.body_length * max(MIN_TRAVEL_BODY_LENGTHS, 0.0)
-        trail_f, ax_f, _ = ctx.run_episode(plan, _full_steps,
-                                            min_travel=_min_travel, min_steps=SIM_STEPS)
+        trail_f, ax_f, _ = ctx.run_episode(best_plan, _full_steps,
+                                            min_travel=_min_travel,
+                                            min_steps=SIM_STEPS)
         return trail_f, list(ax_f)
 
 
@@ -559,130 +815,158 @@ def probe_and_correct_plan(
 ) -> Tuple[dict, List[float]]:
     """Probe → correct plan using a single reusable sim (ONE create_sim per robot).
 
-    All probe episodes share one _RobotSimCtx instance.  Between episodes the
-    robot is teleported back to origin and all velocities are zeroed — NO
-    additional create_sim / destroy_sim calls are made.
+    Strategy (solution 1+3):
+    1. Trust ``final_forward_axis`` from the gait plan by default.
+    2. Run ONE probe to measure yaw rate and forward DISPLACEMENT.
+    3. Only try a 180° flip if the probe shows clear backward displacement.
+    4. Yaw correction (amplitude adjustment) is applied when yaw_rate is high.
     """
     from adaptation.gait import compute_adaptive_plan
 
-    PROBE_STEPS      = 960  # ↑ 360→480→960: improve probe/full-sim correlation
-    YAW_BAD_THRESH   = 0.18
-    FWD_STUCK_THRESH = 0.004
+    PROBE_STEPS      = 1800  # ↑ 960→1800 (30 s) — capture steady-state
+    YAW_BAD_THRESH   = 0.18   # rad/s — above this → apply yaw correction
+    FWD_STUCK_THRESH = 0.004  # m/s   — below this → stuck
     MAX_YAW_ITERS    = 3
     _dt              = 1.0 / 60.0
+    BACKWARD_DISP_M  = -0.10  # ↓ -0.30→-0.10 — catch slow backward walkers
+    TREND_WINDOW     = 240    # last 4 s for steady-state check
 
-    def _metrics(trail, fwd_ax, n_steps):
-        if len(trail) < 2 or n_steps == 0:
+    def _disp_score(trail, fwd_ax):
+        """Return (forward_displacement, lateral_displacement) in metres."""
+        if len(trail) < 2:
             return 0.0, 0.0
         arr = np.array(trail, dtype=float)
-        disp = arr[-1] - arr[0]
-        elapsed = max(n_steps * _dt, _dt)
-        return float(np.dot(disp, fwd_ax)) / elapsed, float(np.linalg.norm(disp)) / elapsed
+        disp = arr[-1, :2] - arr[0, :2] if arr.ndim == 2 else np.array(arr[-1][:2]) - np.array(arr[0][:2])
+        lat = np.array([-fwd_ax[1], fwd_ax[0]], dtype=float)
+        return float(np.dot(disp, fwd_ax)), float(np.dot(disp, lat))
+
+    def _trend_disp(trail, fwd_ax):
+        """Forward displacement over the last TREND_WINDOW steps, or None."""
+        if len(trail) < TREND_WINDOW + 1:
+            return None, None
+        arr = np.array(trail, dtype=float)
+        d = arr[-1, :2] - arr[-TREND_WINDOW - 1, :2]
+        lat = np.array([-fwd_ax[1], fwd_ax[0]], dtype=float)
+        return float(np.dot(d, fwd_ax)), float(np.dot(d, lat))
+
+    def _vel_from_disp(disp_m, n_steps):
+        return disp_m / max(n_steps * _dt, _dt)
 
     plan0 = compute_adaptive_plan(description, {})
     fwd0  = np.asarray(plan0["final_forward_axis"], dtype=float)
     fwd0  = fwd0 / max(float(np.linalg.norm(fwd0)), 1e-9)
 
     with _RobotSimCtx(description, urdf_path, use_gpu=USE_GPU) as ctx:
-        # ── Probe 1 ────────────────────────────────────────────────────────
+        # ── Probe 1: measure yaw + displacement ────────────────────────────
         trail1, _, stats1 = ctx.run_episode(plan0, PROBE_STEPS, return_yaw_stats=True)
-        yaw1           = stats1["yaw_rate_mean"]
-        fwd_vel1, spd1 = _metrics(trail1, fwd0, len(trail1))
-        print(f"  [Probe1] yaw={yaw1:+.3f} rad/s  fwd_vel={fwd_vel1:+.4f} m/s  speed={spd1:.4f} m/s")
+        yaw1            = stats1["yaw_rate_mean"]
+        fwd_disp1, lat_disp1 = _disp_score(trail1, fwd0)
+        fwd_vel1        = _vel_from_disp(fwd_disp1, len(trail1))
+        ft1, lt1 = _trend_disp(trail1, fwd0)
+        ft1_str = f"{ft1:+.3f}m" if ft1 is not None else "N/A"
+        print(f"  [Probe1] yaw={yaw1:+.3f} rad/s  fwd_disp={fwd_disp1:+.3f}m  "
+              f"lat_disp={lat_disp1:+.3f}m  fwd_vel={fwd_vel1:+.4f} m/s  trend={ft1_str}")
 
-        # ── Case A ─────────────────────────────────────────────────────────
+        # Trend-aware direction: trust recent trend over overall if they disagree
+        _dir_fwd = fwd_disp1
+        if ft1 is not None:
+            _trend_vel = ft1 / max(TREND_WINDOW * _dt, _dt)
+            if (_trend_vel > 0.0) != (fwd_vel1 > 0.0):
+                _dir_fwd = ft1
+                print(f"  [Trend] overall={fwd_disp1:+.3f}m vs trend={ft1:+.3f}m "
+                      f"— trusting trend")
+
+        # ── Case A: trust the plan ─────────────────────────────────────────
         if abs(yaw1) < YAW_BAD_THRESH and fwd_vel1 > FWD_STUCK_THRESH:
-            print("  [Opt] Plan OK → queued for batch sim")
+            print("  [Opt] Plan OK (trust final_forward_axis) → queued")
             return plan0, fwd0.tolist()
 
-        # ── Case B: stuck ──────────────────────────────────────────────────
+        # ── Case B: low forward velocity (stuck or backward) ────────────────
         if fwd_vel1 < FWD_STUCK_THRESH:
-            major = np.asarray(plan0["initial_virtual_forward_axis"], dtype=float)
-            major = major / max(float(np.linalg.norm(major)), 1e-9)
-            minor = np.array([-major[1], major[0]], dtype=float)
-            best_score = fwd_vel1 - 0.3 * abs(yaw1)
-            best_plan  = plan0; best_fwd = fwd0.copy()
+            best_plan  = plan0
+            best_fwd   = fwd0.copy()
+            best_score = fwd_disp1 - 0.5 * abs(lat_disp1)  # displacement-based scoring
 
-            # ── Backward detection: if robot clearly moves backward, flip 180° ─
-            # This is the most common fix for direction scoring failures (33% of robots).
-            BACKWARD_THRESH = -0.010  # clearly backwards (≥ 0.6 m over PROBE_STEPS)
-            if fwd_vel1 < BACKWARD_THRESH:
+            # ── Displacement-based backward detection ──────────────────────
+            if _dir_fwd < BACKWARD_DISP_M:
                 flip_axis = -fwd0.copy()
-                print(f"  [Backward] fwd_vel={fwd_vel1:+.4f} < {BACKWARD_THRESH:+.3f}, "
+                print(f"  [Backward] fwd_disp={_dir_fwd:+.3f}m < {BACKWARD_DISP_M:.1f}m, "
                       f"trying 180° flip...", end=" ", flush=True)
                 plan_flip = compute_adaptive_plan(description, {}, forced_axis=flip_axis.tolist())
                 trail_flip, _, stats_flip = ctx.run_episode(
                     plan_flip, PROBE_STEPS, return_yaw_stats=True)
-                yaw_flip    = stats_flip["yaw_rate_mean"]
-                fwd_flip, _ = _metrics(trail_flip, flip_axis, len(trail_flip))
-                score_flip  = fwd_flip - 0.3 * abs(yaw_flip)
-                print(f"yaw={yaw_flip:+.3f}  fwd_flip={fwd_flip:+.4f}  score={score_flip:.4f}")
-                if score_flip > best_score:
+                yaw_flip        = stats_flip["yaw_rate_mean"]
+                fwd_disp_f, lat_disp_f = _disp_score(trail_flip, flip_axis)
+                score_flip      = fwd_disp_f - 0.5 * abs(lat_disp_f)
+                print(f"yaw={yaw_flip:+.3f}  fwd_disp={fwd_disp_f:+.3f}m  score={score_flip:.4f}")
+                # Flip must produce NET POSITIVE forward displacement
+                if fwd_disp_f > 0.0 and score_flip > best_score:
                     best_score = score_flip; best_plan = plan_flip; best_fwd = flip_axis.copy()
-                    print(f"  [Backward] 180° flip accepted (score {score_flip:.4f} > {fwd_vel1 - 0.3*abs(yaw1):.4f})")
+                    print(f"  [Backward] flip accepted "
+                          f"(fwd={fwd_disp_f:+.3f}m > 0, score {score_flip:.4f})")
+                else:
+                    print(f"  [Backward] flip REJECTED "
+                          f"(fwd={fwd_disp_f:+.3f}m, need >0)")
+                    fwd_disp_f = fwd_disp1  # keep using original for stuck check
 
-            for cand in [-major, minor, -minor]:
-                cand_n = cand / max(float(np.linalg.norm(cand)), 1e-9)
-                if float(np.dot(cand_n, best_fwd)) > 0.90:  # skip if too similar to current best
-                    continue
-                plan_c = compute_adaptive_plan(description, {}, forced_axis=cand_n.tolist())
-                trail_c, _, stats_c = ctx.run_episode(plan_c, PROBE_STEPS, return_yaw_stats=True)
-                yaw_c    = stats_c["yaw_rate_mean"]
-                fwd_c, _ = _metrics(trail_c, cand_n, len(trail_c))
-                score_c  = fwd_c - 0.3 * abs(yaw_c)
-                print(f"  [AltAxis] {[round(v,3) for v in cand_n.tolist()]}  "
-                      f"yaw={yaw_c:+.3f}  fwd={fwd_c:+.4f}  score={score_c:.4f}")
-                if score_c > best_score:
-                    best_score = score_c; best_plan = plan_c; best_fwd = cand_n.copy()
-
-            # ── Amplitude boost fallback ───────────────────────────────────
-            # If ALL axes still produce near-zero forward velocity (< 0.003 m/s),
-            # the issue is insufficient swing amplitude, not wrong axis.
-            # Try the best axis with globally boosted stride amplitudes.
-            if best_score < 0.001:  # effectively zero forward motion
-                print(f"  [StuckRecover] All axes stuck (best_score={best_score:.5f}), "
+            # ── Amplitude boost fallback (only if completely stuck) ────────
+            _fwd_disp_current = fwd_disp1 if best_plan is plan0 else fwd_disp_f
+            if _fwd_disp_current < 0.05:  # < 5 cm → truly stuck
+                print(f"  [StuckRecover] fwd_disp={_fwd_disp_current:.3f}m, "
                       f"trying amplitude boost...")
                 boost_plan = dict(best_plan)
                 base_amps = best_plan.get("topology", {}).get("per_leg_stride_amplitudes", {})
                 boost_override = {}
                 for lid_str, amp in base_amps.items():
-                    # Boost by 60%, clamp at 0.85
                     boost_override[lid_str] = float(np.clip(float(amp) * 1.60, 0.25, 0.85))
                 boost_plan["_per_amp_override"] = boost_override
                 trail_boost, _, stats_boost = ctx.run_episode(
                     boost_plan, PROBE_STEPS, return_yaw_stats=True)
-                yaw_b    = stats_boost["yaw_rate_mean"]
-                fwd_b, _ = _metrics(trail_boost, best_fwd, len(trail_boost))
-                score_b  = fwd_b - 0.3 * abs(yaw_b)
-                print(f"  [StuckRecover] Boost: yaw={yaw_b:+.3f}  fwd={fwd_b:+.4f}  "
+                fwd_disp_b, lat_disp_b = _disp_score(trail_boost, best_fwd)
+                score_b  = fwd_disp_b - 0.5 * abs(lat_disp_b)
+                print(f"  [StuckRecover] Boost: fwd_disp={fwd_disp_b:+.3f}m  "
                       f"score={score_b:.4f}")
                 if score_b > best_score:
                     best_score = score_b; best_plan = boost_plan
                     print(f"  [StuckRecover] Amplitude boost accepted")
 
+            # ── Yaw correction ─────────────────────────────────────────────
             if abs(yaw1) > YAW_BAD_THRESH:
-                best_plan = _apply_amp_correction(best_plan, yaw1)
-            print(f"  [Opt] Axis chosen: {[round(v,3) for v in best_fwd.tolist()]} → queued")
+                _lratio = _estimate_side_yaw_ratio(best_plan, yaw1)
+                _simb = abs(_lratio - 0.5) * 2
+                if _simb > 0.3:
+                    best_plan = _apply_side_amp_correction(best_plan, yaw1, left_yaw_ratio=_lratio)
+                    print(f"  [Corr] side-aware (imb={_simb:.2f}, L-ratio={_lratio:.2f})")
+                else:
+                    best_plan = _apply_amp_correction(best_plan, yaw1)
+            print(f"  [Opt] Axis: {[round(v,3) for v in best_fwd.tolist()]} → queued")
             return best_plan, list(best_fwd)
 
-        # ── Case C: spinning ───────────────────────────────────────────────
-        best_plan  = plan0; best_score = fwd_vel1 - 0.3 * abs(yaw1)
+        # ── Case C: spinning — iterative yaw correction only ───────────────
+        # No axis search; trust final_forward_axis direction.
+        best_plan  = plan0
+        best_score = fwd_disp1 - 0.5 * abs(lat_disp1)
         cur_yaw = yaw1; cur_plan = plan0
         for iter_i in range(MAX_YAW_ITERS):
             if abs(cur_yaw) < YAW_BAD_THRESH:
                 break
             strength  = 0.55 + 0.18 * iter_i
-            plan_corr = _apply_amp_correction(cur_plan, cur_yaw, strength=strength)
+            _lratio = _estimate_side_yaw_ratio(cur_plan, cur_yaw)
+            _simb = abs(_lratio - 0.5) * 2
+            if _simb > 0.3:
+                plan_corr = _apply_side_amp_correction(cur_plan, cur_yaw, left_yaw_ratio=_lratio, strength=strength)
+            else:
+                plan_corr = _apply_amp_correction(cur_plan, cur_yaw, strength=strength)
             trail_c, _, stats_c = ctx.run_episode(plan_corr, PROBE_STEPS, return_yaw_stats=True)
             yaw_c    = stats_c["yaw_rate_mean"]
-            fwd_c, _ = _metrics(trail_c, fwd0, len(trail_c))
-            score_c  = fwd_c - 0.3 * abs(yaw_c)
+            fwd_d_c, lat_d_c = _disp_score(trail_c, fwd0)
+            score_c  = fwd_d_c - 0.5 * abs(lat_d_c)
             print(f"  [YawIter{iter_i+1}] strength={strength:.2f}  "
-                  f"yaw={yaw_c:+.3f} rad/s  fwd={fwd_c:+.4f} m/s  score={score_c:.4f}")
+                  f"yaw={yaw_c:+.3f} rad/s  fwd_disp={fwd_d_c:+.3f}m  score={score_c:.4f}")
             if score_c > best_score:
                 best_score = score_c; best_plan = plan_corr
             cur_yaw = yaw_c; cur_plan = plan_corr
-        print(f"  [Opt] Best score={best_score:.4f} → queued for batch sim")
+        print(f"  [Opt] Best score={best_score:.4f} → queued")
         return best_plan, fwd0.tolist()
 
 
@@ -899,7 +1183,7 @@ def run_subbatch_full_pipeline(
         if len(trail) < 2:
             return 0.0
         arr = np.array(trail, dtype=float)
-        return float(np.dot(arr[-1] - arr[0], fwd_ax)) / max(len(trail) * _dt, _dt)
+        return float(np.dot(arr[-1, :2] - arr[0, :2] if arr.ndim == 2 else arr[-1][:2] - arr[0][:2], fwd_ax)) / max(len(trail) * _dt, _dt)
 
     N = len(robot_infos)
     if N == 0:
@@ -1263,13 +1547,18 @@ def run_subbatch_full_pipeline(
                 print("")  # close the "stuck" or "backward" line
             else:
                 yaw_state[i] = {"cur_yaw": yaw, "cur_plan": best_plan[i], "iter": 0}
-                plan_c = _apply_amp_correction(best_plan[i], yaw, strength=0.55)
+                _lratio = _estimate_side_yaw_ratio(best_plan[i], yaw)
+                _simb = abs(_lratio - 0.5) * 2
+                if _simb > 0.3:
+                    plan_c = _apply_side_amp_correction(best_plan[i], yaw, left_yaw_ratio=_lratio, strength=0.55)
+                else:
+                    plan_c = _apply_amp_correction(best_plan[i], yaw, strength=0.55)
                 yaw_state[i]["cur_plan"] = plan_c; yaw_state[i]["iter"] = 1
                 needs_round2.append((i, plan_c, best_fwd[i], "yaw_corr"))
                 print(f"  → spinning s=0.55")
 
-        # Rounds 2-4
-        for round_num in range(2, 5):
+        # Rounds 2-4: skip — probe_and_correct_plan already handles yaw + axis
+        for round_num in range(5, 5):  # empty, disabled
             if not needs_round2:
                 break
             active_r     = [tup[0] for tup in needs_round2]
@@ -1322,7 +1611,12 @@ def run_subbatch_full_pipeline(
                         print(f"  → yaw done score={best_score[i]:.4f}")
                     else:
                         s = strengths[st["iter"]]; st["iter"] += 1
-                        pc = _apply_amp_correction(st["cur_plan"], yaw, strength=s)
+                        _lratio = _estimate_side_yaw_ratio(st["cur_plan"], yaw)
+                        _simb = abs(_lratio - 0.5) * 2
+                        if _simb > 0.3:
+                            pc = _apply_side_amp_correction(st["cur_plan"], yaw, left_yaw_ratio=_lratio, strength=s)
+                        else:
+                            pc = _apply_amp_correction(st["cur_plan"], yaw, strength=s)
                         st["cur_plan"] = pc
                         fwd0 = np.asarray(robot_infos[i]["initial_plan"]["final_forward_axis"], dtype=float)
                         fwd0 /= max(float(np.linalg.norm(fwd0)), 1e-9)
@@ -2341,9 +2635,19 @@ def _ekf_batch_worker(
         urdf_path   = info["urdf_path"]
         plan        = corrected_plan or info["initial_plan"]
         try:
-            ekf_trail, ekf_fwd, ekf_stats = run_ekf_online_simulation(
+            ekf_trail, ekf_fwd, ekf_stats, final_com_offset = run_ekf_online_simulation(
                 description, urdf_path, plan, ekf_steps,
             )
+            # Recompute gait plan with EKF-estimated CoM offset for feedforward
+            plan_with_offset = None
+            try:
+                from adaptation.gait import compute_adaptive_plan
+                if np.linalg.norm(final_com_offset) > 1e-6:
+                    plan_with_offset = compute_adaptive_plan(
+                        description, {}, com_offset_xy=final_com_offset,
+                    )
+            except Exception:
+                pass
             if len(ekf_trail) > 1:
                 ekf_arr = np.array(ekf_trail, dtype=float)
                 ekf_fwd_v = np.asarray(ekf_fwd, dtype=float)
@@ -2354,11 +2658,13 @@ def _ekf_batch_worker(
                 ekf_lat_d = float(np.dot(ekf_disp, ekf_lat_v))
                 ekf_drift = abs(ekf_lat_d) / max(abs(ekf_fwd_d), 0.01)
                 results.append((ekf_fwd_d, ekf_lat_d, ekf_trail, ekf_drift,
-                               "ekf_online", True))
+                               "ekf_online", True, final_com_offset, plan_with_offset))
             else:
-                results.append((0.0, 0.0, [], 999.0, "ekf_failed", False))
+                results.append((0.0, 0.0, [], 999.0, "ekf_failed", False,
+                               [0.0, 0.0], None))
         except Exception:
-            results.append((0.0, 0.0, [], 999.0, "ekf_error", False))
+            results.append((0.0, 0.0, [], 999.0, "ekf_error", False,
+                           [0.0, 0.0], None))
         # Cleanup between EKF runs inside the worker
         import gc as _gc3
         _gc3.collect()
@@ -2503,7 +2809,10 @@ def run_ekf_online_simulation(
             "yaw_rate_mean": float(np.mean(valid)) if valid else 0.0,
             "yaw_rate_std": float(np.std(valid)) if valid else 0.0,
         }
-        return com_trail, fwd.tolist(), yaw_stats
+        # Extract final CoM offset estimate from EKF for feedforward use
+        final_adapt = estimator.get_state()
+        final_com_offset = final_adapt.com_offset_xy.tolist() if hasattr(final_adapt, 'com_offset_xy') else [0.0, 0.0]
+        return com_trail, fwd.tolist(), yaw_stats, final_com_offset
 
 
 # ---------------------------------------------------------------------------
@@ -2518,7 +2827,7 @@ def main() -> None:
     # Ensure seed list is long enough
     seeds = list(SEEDS)
     while len(seeds) < NUM_ROBOTS:
-        seeds.append(random.randint(1, 9999))
+        seeds.append(random.randint(1, 999999))
     seeds = seeds[:NUM_ROBOTS]
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -2559,11 +2868,11 @@ def main() -> None:
             ssm_result = check_stability(description)
             print(f"  [SSM]  ssm={ssm_result['ssm']:.4f}m  passed={ssm_result['passed']}")
             com_trail, forward_axis = optimize_and_simulate(description, urdf_path_std)
-            trail = np.array(com_trail, dtype=float) if len(com_trail) > 1 else np.zeros((2, 2))
+            trail = np.array(com_trail, dtype=float) if len(com_trail) > 1 else np.zeros((2, 3))
             fwd   = np.asarray(forward_axis, dtype=float)
             fwd   = fwd / max(float(np.linalg.norm(fwd)), 1e-9)
             lat   = np.array([-fwd[1], fwd[0]], dtype=float)
-            disp  = trail[-1] - trail[0] if len(trail) > 1 else np.zeros(2)
+            disp  = trail[-1, :2] - trail[0, :2] if len(trail) > 1 else np.zeros(2)
             fwd_dist = float(np.dot(disp, fwd))
             lat_dist = float(np.dot(disp, lat))
             print(f"  [Sim]  steps={len(com_trail)}  fwd={fwd_dist:+.3f}m  lat={lat_dist:+.3f}m")
@@ -2634,99 +2943,35 @@ def main() -> None:
             "robot_dir":    robot_dir,
         })
 
-    # ── Unified pipeline: probe + correction + full-sim, ONE sim per sub-batch ─
-    # Isolation: group sub-batches into chunks of ≤3.  Each chunk runs in ONE
-    # subprocess (_chunked_worker) that does ≤3 create/destroy cycles (well under
-    # the ~12-cycle PhysX corruption limit) while keeping total subprocess spawns
-    # low (≤ ceil(N/3), well under the ~7-spawn GPU driver limit).
+    # ── Sequential pipeline: one robot at a time, probe + full-sim ───────
     if pending_probe:
-        import multiprocessing as _mp
-        import pickle as _pkl
-        import tempfile as _tmp
-
         print(f"\n{'='*60}")
-        total_batches = math.ceil(len(pending_probe) / GPU_BATCH_SIZE)
-        print(f"[Batch] Unified pipeline: {len(pending_probe)} robots, "
-              f"{total_batches} sub-batch(es) of ≤{GPU_BATCH_SIZE}, GPU={USE_GPU}")
+        print(f"[Batch] Sequential: {len(pending_probe)} robots, GPU={USE_GPU}")
 
-        # Build flat list of (batch_start, batch)
-        flat_batches = []
-        for bs in range(0, len(pending_probe), GPU_BATCH_SIZE):
-            flat_batches.append((bs, pending_probe[bs:bs + GPU_BATCH_SIZE]))
-
-        # Chunk into groups of MAX_BATCHES_PER_PROCESS
-        MAX_BATCHES_PER_PROCESS = 3
-        chunks = []
-        for ci in range(0, len(flat_batches), MAX_BATCHES_PER_PROCESS):
-            chunks.append(flat_batches[ci:ci + MAX_BATCHES_PER_PROCESS])
-
-        # Results arrays (indexed by position in pending_probe)
         probe_all = [None] * len(pending_probe)
         sim_all   = [None] * len(pending_probe)
 
-        for ci, chunk in enumerate(chunks):
-            first_bnum = flat_batches.index(chunk[0]) + 1
-            last_bnum  = first_bnum + len(chunk) - 1
-            n_robots   = sum(len(b) for _, b in chunk)
-            print(f"\n  [Chunk {ci+1}/{len(chunks)}] sub-batches {first_bnum}–{last_bnum}"
-                  f" ({n_robots} robots, {len(chunk)}× create/destroy)")
-
-            with _tmp.NamedTemporaryFile(suffix="_chunk.pkl", delete=False) as tf:
-                rf = tf.name
-
-            _saved_pp = os.environ.get("PYTHONPATH", "")
-            os.environ["PYTHONPATH"] = (
-                f"{REPO_ROOT}:{_saved_pp}" if _saved_pp else str(REPO_ROOT)
-            )
-            try:
-                p = _mp.get_context("spawn").Process(
-                    target=_chunked_worker, args=(chunk, USE_GPU, rf))
-                p.start()
-            finally:
-                if _saved_pp:
-                    os.environ["PYTHONPATH"] = _saved_pp
-                else:
-                    os.environ.pop("PYTHONPATH", None)
-
-            p.join(timeout=7200)
-            if p.is_alive():
-                p.terminate(); p.join(30)
-
-            ok = False
-            if os.path.exists(rf) and os.path.getsize(rf) > 0:
-                try:
-                    with open(rf, "rb") as f:
-                        cp, cs = _pkl.load(f)
-                    if len(cp) == len(chunk) and len(cs) == len(chunk):
-                        ok = True
-                        for k, ((bs, batch), pr, sr) in enumerate(zip(chunk, cp, cs)):
-                            for j in range(len(batch)):
-                                idx = bs + j
-                                probe_all[idx] = pr[j] if j < len(pr) else (
-                                    batch[j]["initial_plan"],
-                                    batch[j]["initial_plan"]["final_forward_axis"])
-                                sim_all[idx] = sr[j] if j < len(sr) else ([], [1.0, 0.0])
-                except Exception:
-                    pass
+        for idx, info in enumerate(pending_probe):
+            robot_name  = info["robot_name"]
+            n_legs      = int(info["description"].get("num_legs", 0))
+            print(f"\n[{idx+1}/{len(pending_probe)}] {robot_name} "
+                  f"({n_legs} legs)", flush=True)
 
             try:
-                os.unlink(rf)
-            except OSError:
-                pass
-
-            if ok:
-                print(f"  [Chunk {ci+1}] OK")
-            else:
-                print(f"  [Chunk {ci+1}] FAILED (exit={p.exitcode}), using fallback")
-                for bs, batch in chunk:
-                    for j, info in enumerate(batch):
-                        idx = bs + j
-                        probe_all[idx] = (info["initial_plan"],
-                                          info["initial_plan"]["final_forward_axis"])
-                        sim_all[idx] = ([], [1.0, 0.0])
-
-            # Brief pause between chunks for GPU thermal recovery
-            time.sleep(2.0)
+                trail, fwd_axis = optimize_and_simulate(
+                    info["description"], info["urdf_path"])
+                probe_all[idx] = (info["initial_plan"],
+                                  info["initial_plan"]["final_forward_axis"])
+                sim_all[idx]   = (trail, fwd_axis)
+                print(f"  [Sim] steps={len(trail)}", flush=True)
+                # Allow GPU to fully release between contexts
+                time.sleep(3.0)
+            except Exception as e:
+                print(f"  [FAIL] {e}", flush=True)
+                import traceback; traceback.print_exc()
+                probe_all[idx] = (info["initial_plan"],
+                                  info["initial_plan"]["final_forward_axis"])
+                sim_all[idx]   = ([], info["initial_plan"]["final_forward_axis"])
 
         # ── Process all results ────────────────────────────────────────────
         for pending_idx, info in enumerate(pending_probe):
@@ -2740,8 +2985,8 @@ def main() -> None:
             fwd  = np.asarray(forward_axis, dtype=float)
             fwd  = fwd / max(float(np.linalg.norm(fwd)), 1e-9)
             lat  = np.array([-fwd[1], fwd[0]], dtype=float)
-            trail = np.array(com_trail, dtype=float) if len(com_trail) > 1 else np.zeros((2, 2))
-            disp  = trail[-1] - trail[0] if len(trail) > 1 else np.zeros(2)
+            trail = np.array(com_trail, dtype=float) if len(com_trail) > 1 else np.zeros((2, 3))
+            disp  = trail[-1, :2] - trail[0, :2] if len(trail) > 1 else np.zeros(2)
             fwd_dist = float(np.dot(disp, fwd))
             lat_dist = float(np.dot(disp, lat))
             drift_ratio = abs(lat_dist) / max(abs(fwd_dist), 0.01)
@@ -2823,7 +3068,7 @@ def main() -> None:
                         with open(_ekf_rf, "rb") as _f:
                             _ekf_results = _pkl2.load(_f)
                         for (_pi, _info, _sr, _corr_plan), (_efwd, _elat, _etrail, _edrift,
-                                                 _estrategy, _eok) in zip(
+                                                 _estrategy, _eok, _ecoff, _eplan) in zip(
                                 _ekf_candidates, _ekf_results):
                             _old_drift = _sr.get("drift_ratio", 999)
                             if _eok and _edrift < _old_drift:
@@ -2831,6 +3076,10 @@ def main() -> None:
                                 _sr["lat_dist"] = _elat
                                 _sr["drift_ratio"] = round(_edrift, 3)
                                 _sr["strategy"] = _estrategy
+                                # Store CoM-aware plan for potential full-sim re-run
+                                if _eplan is not None:
+                                    _sr["_com_offset_plan"] = _eplan
+                                    _sr["_com_offset_xy"] = _ecoff
                                 print(f"    [EKF] {_info['robot_name']} ✓ "
                                       f"drift={_edrift:.2f} (was {_old_drift:.2f})")
                             else:

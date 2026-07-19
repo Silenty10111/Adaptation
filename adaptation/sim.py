@@ -138,7 +138,7 @@ class _RobotSimCtx:
             _lrr = max(fj["lift_upper"] - fj["lift_lower"], 1e-9)
             _drr = max(fj["drop_upper"] - fj["drop_lower"], 1e-9)
             _sl  = max(0.0, min(1.0, (0.0  - fj["lift_lower"]) / _lrr))
-            _swl = max(0.0, min(1.0, (+0.25 - fj["lift_lower"]) / _lrr))
+            _swl = max(0.0, min(1.0, (-0.25 - fj["lift_lower"]) / _lrr))  # foot UP during swing
             _sd  = max(0.0, min(1.0, (0.0  - fj["drop_lower"]) / _drr))
             _swd = _sd
         else:
@@ -249,9 +249,15 @@ class _RobotSimCtx:
 
         def _rtj(lo, hi, r):
             return float(lo + max(0.0, min(1.0, r)) * (hi - lo))
+        # Quintic smoothstep — C² continuous (acceleration vanishes at boundaries)
         def _ss(e0, e1, x):
             t = max(0.0, min(1.0, (x - e0) / max(e1 - e0, 1e-9)))
-            return t * t * (3.0 - 2.0 * t)
+            return t * t * t * (10.0 - 15.0 * t + 6.0 * t * t)
+        def _quat_to_yaw(w, x, y, z):
+            """Extract yaw from quaternion."""
+            siny = 2.0 * (w * z + x * y)
+            cosy = 1.0 - 2.0 * (y * y + z * z)
+            return float(np.arctan2(siny, cosy))
 
         _sl, _swl, _sd, _swd = self._sl, self._swl, self._sd, self._swd
         com_trail:      List[List[float]] = []
@@ -259,6 +265,14 @@ class _RobotSimCtx:
         touchdown_ramp: Dict[int, int]    = {}
         sim_time = 0.0
         dt = 1.0 / 60.0
+
+        # ── Online yaw correction state ────────────────────────────────────
+        _base_amplitudes = dict(per_amp)
+        _yaw_integral = 0.0
+        _planned_yaw = float(np.arctan2(fwd[1], fwd[0]))
+        # ── Body height compensation state ─────────────────────────────────
+        _height_target = BODY_HEIGHT
+        _height_ie = 0.0
 
         for step in range(n_steps):
             phase_now = 2.0 * math.pi * GAIT_FREQUENCY * sim_time
@@ -276,9 +290,9 @@ class _RobotSimCtx:
                 else:                lg_ph = 0.0
 
                 sw    = float(math.sin(lg_ph))
-                alpha = _ss(-0.30, 0.30, sw)
+                alpha = _ss(-0.35, 0.35, sw)
                 fv    = self.fmap.get(lid, np.zeros(2))
-                dsign = -1.0 if float(np.dot(fv, lat)) > 0.0 else 1.0
+                dsign = 1.0 if float(np.dot(fv, lat)) > 0.0 else -1.0
                 eff_amp = SWING_AMP * float(per_amp.get(str(lid), 1.0))
 
                 lr = _sl + (_swl - _sl) * alpha
@@ -289,10 +303,11 @@ class _RobotSimCtx:
                 if not is_sw:
                     if lid in touchdown_ramp:
                         touchdown_ramp[lid] += 1
-                        rp = min(touchdown_ramp[lid] / 8, 1.0)
-                        if rp >= 1.0:
+                        rp_raw = min(touchdown_ramp[lid] / 25, 1.0)
+                        if rp_raw >= 1.0:
                             del touchdown_ramp[lid]
                         else:
+                            rp = _ss(0.0, 1.0, rp_raw)  # quintic easing
                             dl  = _rtj(j["lift_lower"],  j["lift_upper"],  0.5)
                             dd  = _rtj(j["drop_lower"],  j["drop_upper"],  0.5)
                             ds_ = j["swing_lower"] + 0.5 * (j["swing_upper"] - j["swing_lower"])
@@ -311,26 +326,65 @@ class _RobotSimCtx:
             gym.simulate(sim); gym.fetch_results(sim, True)
 
             _sflag = ga.STATE_ALL if return_yaw_stats else ga.STATE_POS
-            states = gym.get_actor_rigid_body_states(env, actor, _sflag)
+            states = gym.get_actor_rigid_body_states(env, actor, ga.STATE_ALL)
+            body_yaw = 0.0
             if states is not None and len(states) > 0:
                 p = states["pose"]["p"][0]
-                com_trail.append([float(p["x"]), float(p["y"])])
+                r = states["pose"]["r"][0]
+                body_yaw = _quat_to_yaw(float(r["w"]), float(r["x"]), float(r["y"]), float(r["z"]))
+                com_trail.append([float(p["x"]), float(p["y"]), body_yaw])
                 if return_yaw_stats:
                     try:
                         yaw_acc.append(float(states["vel"]["angular"][0]["z"]))
                     except Exception:
                         if len(com_trail) >= 3:
-                            _d1 = np.array(com_trail[-1]) - np.array(com_trail[-2])
-                            _d0 = np.array(com_trail[-2]) - np.array(com_trail[-3])
+                            _d1 = np.array(com_trail[-1][:2]) - np.array(com_trail[-2][:2])
+                            _d0 = np.array(com_trail[-2][:2]) - np.array(com_trail[-3][:2])
                             _da = ((math.atan2(_d1[1], _d1[0]) - math.atan2(_d0[1], _d0[0]) + math.pi) % (2 * math.pi)) - math.pi
                             yaw_acc.append(_da / max(dt, 1e-9))
+
+            # ── Online yaw correction (every 60 steps) ─────────────────────
+            if (step + 1) % 60 == 0:
+                yaw_err = body_yaw - _planned_yaw
+                yaw_err = float(np.arctan2(np.sin(yaw_err), np.cos(yaw_err)))
+                if abs(yaw_err) > 0.0087:  # ~0.5°
+                    _yaw_integral += 0.02 * yaw_err
+                    _yaw_integral = float(np.clip(_yaw_integral, -0.5, 0.5))
+                    # PI: Kp=1.0, Ki=0.3, saturation at 0.3 rad (~17°)
+                    yaw_p = float(np.clip(yaw_err / 0.3, -1.0, 1.0))
+                    yaw_i = float(np.clip(_yaw_integral / 0.3, -1.0, 1.0))
+                    yaw_signal = float(np.clip(yaw_p + 0.3 * yaw_i, -1.0, 1.0))
+                    # Apply via yaw_lever model
+                    yaw_levers = {int(k): float(v)
+                                  for k, v in plan.get("yaw_balance", {}).get("yaw_levers", {}).items()}
+                    if yaw_levers:
+                        max_lv = max(abs(v) for v in yaw_levers.values())
+                        if max_lv > 1e-9:
+                            corr = {}
+                            for lid_str, amp in _base_amplitudes.items():
+                                lv = yaw_levers.get(int(lid_str), 0.0)
+                                s = 1.0 - yaw_signal * lv / max_lv
+                                s = float(np.clip(s, 0.40, 1.60))
+                                corr[lid_str] = float(np.clip(float(amp) * s, 0.15, 0.85))
+                            per_amp = corr
+
+            # ── Body height compensation (every 120 steps) ────────────────
+            if (step + 1) % 120 == 0 and states is not None and len(states) > 0:
+                body_z = float(states["pose"]["p"][0]["z"])
+                z_err = _height_target - body_z
+                _height_ie += 0.03 * z_err
+                _height_ie = float(np.clip(_height_ie, -0.15, 0.35))
+                _sl  = self._sl  - 0.25 * _height_ie
+                _sl  = float(np.clip(_sl,  0.05, 0.95))
+                _sd  = self._sd  - 0.40 * _height_ie
+                _sd  = float(np.clip(_sd,  0.55, 1.0))
 
             sim_time += dt
 
             # Early exit for full-sim mode
             if min_travel > 0.0 and step >= min_steps and len(com_trail) > 1:
                 arr = np.array(com_trail, dtype=float)
-                covered = abs(float(np.dot(arr[-1] - arr[0], fwd)))
+                covered = abs(float(np.dot(arr[-1][:2] - arr[0][:2], fwd)))
                 if covered >= min_travel:
                     break
 

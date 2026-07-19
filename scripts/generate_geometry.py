@@ -142,6 +142,7 @@ def compute_mount_points(
     count: int,
     placement: str,
     rng: np.random.Generator,
+    upper_length: float = 0.28,
 ) -> List[Dict[str, List[float]]]:
     coords = np.asarray(polygon.exterior.coords[:-1], dtype=float)
     segments: List[Tuple[np.ndarray, np.ndarray, float, float, float]] = []
@@ -166,8 +167,9 @@ def compute_mount_points(
             distances.append(distance)
         distances = np.sort(np.asarray(distances, dtype=float))
 
-        # Keep neighboring hip mounts apart to reduce self-intersection near the trunk.
-        min_gap = cumulative / max(1.0, count * 1.6)
+        # Minimum arc-gap = upper leg length so feet land at least one
+        # thigh-length apart, giving each foot an independent support region.
+        min_gap = upper_length
         adjusted: List[float] = []
         for distance in distances:
             candidate = float(distance)
@@ -395,7 +397,7 @@ def assemble_robot(args: argparse.Namespace) -> Dict[str, object]:
     joints: List[Dict[str, object]] = []
     assembled_meshes: List[trimesh.Trimesh] = []
 
-    mount_points = compute_mount_points(polygon, num_legs, args.leg_placement, rng)
+    mount_points = compute_mount_points(polygon, num_legs, args.leg_placement, rng, args.upper_length)
     hip_z = -args.body_height / 2.0
 
     # ---- Phase 1: compute all leg geometry — no disk I/O, rng consumed here ----

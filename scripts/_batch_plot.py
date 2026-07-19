@@ -43,8 +43,8 @@ def main():
             return R @ pts
         return (R @ pts.T).T
 
-    origin   = trail[0] if len(trail) > 0 else np.zeros(2)
-    delta    = trail - origin
+    origin   = trail[0, :2] if len(trail) > 0 else np.zeros(2)
+    delta    = trail[:, :2] - origin
     fwd_vals = delta @ fwd
     lat_vals = delta @ lat
 

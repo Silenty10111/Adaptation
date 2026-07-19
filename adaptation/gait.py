@@ -47,8 +47,17 @@ def compute_adaptive_plan(
     description: Dict,
     state: Optional[Dict] = None,
     forced_axis: Optional[List[float]] = None,
+    com_offset_xy: Optional[List[float]] = None,
 ) -> Dict:
     """Compute virtual forward axis, heading direction, leg groups, and gait topology.
+
+    Parameters
+    ----------
+    com_offset_xy : [dx, dy] in metres, optional
+        Estimated CoM offset from an external estimator (e.g. EKF).  When
+        provided the yaw lever arms, safety corridor and translational
+        compensation are computed relative to the *effective* CoM
+        (geometric CoM + offset) instead of the pure geometric CoM.
 
     Phase 1 — Forward axis (Section 4b in README):
       1. Collect foot positions and build weighted covariance matrix.
@@ -170,6 +179,21 @@ def compute_adaptive_plan(
         total_mass += mass
     if total_mass > EPS:
         projected_com_xy /= total_mass
+
+    # ---- Effective CoM (geometric + estimator offset) -------------------------
+    # When an external estimator (e.g. EKF) provides a CoM offset, use the
+    # effective CoM for all downstream computations that depend on the true
+    # centre of mass: yaw lever arms, safety corridor centre, translational
+    # compensation target.  This allows the plan to pre-compensate for a known
+    # mass distribution asymmetry.
+    if com_offset_xy is None and isinstance(state, dict) and "com_offset_xy" in state:
+        com_offset_xy = state["com_offset_xy"]
+    if com_offset_xy is not None and len(com_offset_xy) >= 2:
+        com_offset_arr = np.asarray(com_offset_xy[:2], dtype=float)
+        effective_com_xy = projected_com_xy + com_offset_arr
+    else:
+        com_offset_arr = np.zeros(2, dtype=float)
+        effective_com_xy = projected_com_xy
 
     # ---- Mass-Weighted PCA (Principal Axis of Inertia) -----------------------
     cov_mass = np.zeros((2, 2), dtype=float)
@@ -443,7 +467,7 @@ def compute_adaptive_plan(
             from shapely.geometry import LineString, Polygon as ShpPoly
             poly = ShpPoly(support_polygon)
             # Walk along forward axis through the polygon
-            com_p = projected_com_xy
+            com_p = effective_com_xy
             step_len = 0.06
             num_steps = 30
             for i in range(-num_steps, num_steps + 1):
@@ -479,7 +503,7 @@ def compute_adaptive_plan(
     torque_weights = state.get("torque_weights", {})
     avg_w = np.mean([float(w) for w in torque_weights.values()]) if torque_weights else 1.0
     effective_lambda = lambda_reg * avg_w
-    com_offset = cos_xy - projected_com_xy
+    com_offset = cos_xy - effective_com_xy
     translational_compensation = com_offset / (1.0 + effective_lambda)
 
     # ---- Phase 2: leg grouping -----------------------------------------------
@@ -640,12 +664,40 @@ def compute_adaptive_plan(
             grp.remove(leg_to_demote)
             group_c.append(leg_to_demote)
 
+    # ---- CoM offset pre-bias for stride amplitudes ---------------------------
+    # When an external estimator (EKF) has identified a lateral CoM offset,
+    # pre-scale the stride amplitudes BEFORE yaw torque compensation so that
+    # the side opposite the offset gets more propulsion, compensating the
+    # expected yaw from the shifted centre of mass.
+    COM_PREBIAS_GAIN = 2.0  # tunable: 0 = no pre-bias, 3+ = aggressive
+    if np.linalg.norm(com_offset_arr) > 1e-6:
+        lat_offset = float(np.dot(com_offset_arr, lat_axis))
+        _prebias_scales: Dict[int, float] = {}
+        for lid in active_legs:
+            r = foot_xy[lid] - effective_com_xy
+            yaw_lev = float(r[0] * fwd_axis[1] - r[1] * fwd_axis[0])
+            # yaw_lev > 0 → foot is on the LEFT side of forward axis
+            # CoM shifted left (lat_offset > 0) → left legs need MORE push
+            pre_scale = 1.0 - COM_PREBIAS_GAIN * lat_offset * np.sign(yaw_lev)
+            pre_scale = float(np.clip(pre_scale, 0.70, 1.30))
+            _prebias_scales[lid] = pre_scale
+            per_leg_stride_amplitudes[lid] = float(
+                np.clip(per_leg_stride_amplitudes[lid] * pre_scale, 0.20, 0.85)
+            )
+        _pb_scales_fmt = ", ".join(
+            f"{lid}:{_prebias_scales[lid]:.3f}" for lid in sorted(active_legs)
+        )
+        print(f"[CoM_PreBias] lat_offset={lat_offset:.4f}m  "
+              f"scales=[{_pb_scales_fmt}]")
+    else:
+        _prebias_scales = {}
+
     # ---- Yaw torque compensation via per-leg stride amplitude scaling -------
     # Physics: when leg i is in stance the reaction force on the body points along
     # final_axis with magnitude ∝ stride_amplitude_i.  The yaw torque about the
     # COM is  τ_i = stride_i × ψ_i  where the "yaw lever" for leg i is:
     #   ψ_i = swing_proj_i × cross2d(r_i, final_axis)
-    #       r_i = foot_i − projected_com_xy
+    #       r_i = foot_i − effective_com_xy
     # Net yaw = Σ ψ_i (with unit amplitudes).
     #
     # Least-squares correction: minimise Σ(s_i − 1)² s.t. Σ s_i ψ_i = 0
@@ -660,7 +712,7 @@ def compute_adaptive_plan(
     yaw_levers_by_leg: Dict[int, float] = {}
     psi_by_leg: Dict[int, float] = {}
     for lid in active_legs:
-        r = foot_xy[lid] - projected_com_xy
+        r = foot_xy[lid] - effective_com_xy
         yaw_lever = float(r[0] * final_axis[1] - r[1] * final_axis[0])
         yaw_levers_by_leg[lid] = yaw_lever
         psi_by_leg[lid] = swing_projections.get(lid, 0.0) * yaw_lever
@@ -688,6 +740,93 @@ def compute_adaptive_plan(
               f"max_adj={_max_adj:.3f}")
     else:
         net_yaw_corrected = net_yaw_nominal
+
+    # ---- Left-right propulsion impulse balance --------------------------------
+    # Yaw torque compensation ensures Σ s_i·ψ_i ≈ 0 (no net rotation), but it
+    # does NOT guarantee that the left and right sides produce equal forward
+    # thrust.  If one side pushes harder the robot traces an arc even though the
+    # instantaneous yaw torque cancels.
+    #
+    # This step computes the total propulsion from each side (using the already
+    # yaw-compensated amplitudes) and scales down the stronger side so the
+    # cumulative left/right forward impulse is roughly equal.
+    LR_IMBALANCE_THRESHOLD  = 1.15   # only trigger when ratio > 1.15
+    LR_MIN_SCALE_FACTOR     = 0.65   # never reduce a leg below 65 % of yaw-comp value
+    LR_YAWW_BLOWUP_THRESHOLD = 2.0   # rollback if net yaw doubles after equalization
+
+    # Classify each active leg as left (-1) / neutral (0) / right (+1)
+    # using the pure geometric yaw lever (without swing_proj factor).
+    leg_lat_side: Dict[int, float] = {}
+    for lid in active_legs:
+        lev = yaw_levers_by_leg.get(lid, 0.0)
+        leg_lat_side[lid] = float(np.sign(lev)) if abs(lev) > 1e-9 else 0.0
+
+    # Compute per-side total propulsion from yaw-compensated amplitudes.
+    left_propulsion = 0.0
+    right_propulsion = 0.0
+    left_legs: List[int] = []
+    right_legs: List[int] = []
+    for lid in active_legs:
+        proj_mag = abs(swing_projections.get(lid, 0.0))
+        amp = per_leg_stride_amplitudes.get(lid, 0.5)
+        contrib = proj_mag * amp
+        side = leg_lat_side[lid]
+        if side < 0:
+            left_propulsion += contrib
+            left_legs.append(lid)
+        elif side > 0:
+            right_propulsion += contrib
+            right_legs.append(lid)
+        # side == 0: leg sits exactly on the forward-axis line → neutral, skip
+
+    # Equalise: scale down the stronger side only (never scale up, to stay
+    # within joint limits).  Save pre-equalisation amplitudes for rollback.
+    _pre_lr_amps = dict(per_leg_stride_amplitudes)
+    _lr_applied = False
+    _lr_scale = 1.0
+    _lr_stronger_side = ""
+    if left_propulsion > 1e-9 and right_propulsion > 1e-9:
+        ratio = max(left_propulsion, right_propulsion) / min(left_propulsion, right_propulsion)
+        if ratio > LR_IMBALANCE_THRESHOLD and left_legs and right_legs:
+            if left_propulsion > right_propulsion:
+                _lr_scale = right_propulsion / left_propulsion
+                _lr_stronger_side = "left"
+                stronger_legs = left_legs
+            else:
+                _lr_scale = left_propulsion / right_propulsion
+                _lr_stronger_side = "right"
+                stronger_legs = right_legs
+            _lr_scale = max(_lr_scale, LR_MIN_SCALE_FACTOR)
+
+            for lid in stronger_legs:
+                per_leg_stride_amplitudes[lid] = (
+                    per_leg_stride_amplitudes[lid] * _lr_scale
+                )
+
+            # Re-clamp all amplitudes after equalisation
+            for lid in active_legs:
+                per_leg_stride_amplitudes[lid] = float(
+                    np.clip(per_leg_stride_amplitudes[lid], 0.20, 0.85)
+                )
+
+            # Re-verify yaw balance — rollback if significantly worsened
+            _net_yaw_lr = sum(
+                psi_by_leg[lid] * per_leg_stride_amplitudes[lid]
+                for lid in active_legs
+            )
+            if abs(_net_yaw_lr) > LR_YAWW_BLOWUP_THRESHOLD * abs(net_yaw_corrected) + 1e-6:
+                # Rollback: restore pre-equalisation amplitudes
+                for lid in active_legs:
+                    per_leg_stride_amplitudes[lid] = _pre_lr_amps[lid]
+                print(f"[LR_Balance] ROLLBACK  net_yaw {net_yaw_corrected:+.4f} → "
+                      f"{_net_yaw_lr:+.4f} (>{LR_YAWW_BLOWUP_THRESHOLD:.1f}×), "
+                      f"keeping yaw-comp only")
+            else:
+                net_yaw_corrected = _net_yaw_lr
+                _lr_applied = True
+                print(f"[LR_Balance] {_lr_stronger_side} scaled ×{_lr_scale:.3f}  "
+                      f"L={left_propulsion:.3f}  R={right_propulsion:.3f}  "
+                      f"ratio={ratio:.2f}  net_yaw {net_yaw_nominal:+.4f}→{net_yaw_corrected:+.4f}")
 
     # ---- CPG coupling matrix (geometry-aware) --------------------------------
     cpg_cfg = state.get("cpg", {}) if isinstance(state.get("cpg", {}), dict) else {}
@@ -769,6 +908,9 @@ def compute_adaptive_plan(
     plan = {
         "support_center_xy": cos_xy.tolist(),
         "projected_com_xy": projected_com_xy.tolist(),
+        "effective_com_xy": effective_com_xy.tolist(),
+        "com_offset_applied": com_offset_arr.tolist(),
+        "com_prebias_applied": bool(np.linalg.norm(com_offset_arr) > 1e-6),
         "initial_virtual_forward_axis": major_axis.tolist(),
         "final_forward_axis": final_axis.tolist(),
         "drive_resultant_xy": drive_resultant.tolist(),
@@ -790,6 +932,16 @@ def compute_adaptive_plan(
             # Negative = foot is on the right (adds CW yaw when thrust).
             "psi_by_leg": {str(lid): float(psi_by_leg.get(lid, 0.0)) for lid in active_legs},
             "yaw_levers": {str(lid): float(yaw_levers_by_leg.get(lid, 0.0)) for lid in active_legs},
+            # Left-right propulsion balance diagnostics
+            "lr_balance": {
+                "applied": _lr_applied,
+                "stronger_side": _lr_stronger_side,
+                "scale_factor": float(_lr_scale),
+                "left_propulsion": float(left_propulsion),
+                "right_propulsion": float(right_propulsion),
+                "left_legs": left_legs,
+                "right_legs": right_legs,
+            },
         },
         "cpg": {
             "active_leg_ids": active_legs,
