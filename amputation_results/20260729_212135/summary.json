@@ -1,0 +1,182 @@
+[
+  {
+    "robot": "baseline_6legs",
+    "status": "ok",
+    "ssm": 0.5800362200879557,
+    "num_legs": 6,
+    "fwd_dist": 8.768202809791543,
+    "lat_dist": 0.48021333478396566,
+    "drift_ratio": 0.055,
+    "steps": 6000
+  },
+  {
+    "robot": "missing_leg_0",
+    "status": "ok",
+    "ssm": 0.33065586260240876,
+    "num_legs": 5,
+    "fwd_dist": 0.16048739050683322,
+    "lat_dist": -0.7020004692589498,
+    "drift_ratio": 4.374,
+    "steps": 6000
+  },
+  {
+    "robot": "missing_leg_1",
+    "status": "ok",
+    "ssm": 0.5101765692546286,
+    "num_legs": 5,
+    "fwd_dist": -0.10114604793489035,
+    "lat_dist": -0.16421527229249444,
+    "drift_ratio": 1.624,
+    "steps": 6000
+  },
+  {
+    "robot": "missing_leg_2",
+    "status": "ok",
+    "ssm": 0.3306558626024088,
+    "num_legs": 5,
+    "fwd_dist": -1.3987950374956644,
+    "lat_dist": -2.24718476848385,
+    "drift_ratio": 1.607,
+    "steps": 6000
+  },
+  {
+    "robot": "missing_leg_3",
+    "status": "ok",
+    "ssm": 0.33065586260240876,
+    "num_legs": 5,
+    "fwd_dist": 0.6642753715281838,
+    "lat_dist": 0.22753787176121112,
+    "drift_ratio": 0.343,
+    "steps": 6000
+  },
+  {
+    "robot": "missing_leg_4",
+    "status": "ok",
+    "ssm": 0.5101765692546286,
+    "num_legs": 5,
+    "fwd_dist": 0.9707155441865059,
+    "lat_dist": -7.587087213993076,
+    "drift_ratio": 7.816,
+    "steps": 6000
+  },
+  {
+    "robot": "missing_leg_5",
+    "status": "ok",
+    "ssm": 0.33065586260240876,
+    "num_legs": 5,
+    "fwd_dist": 0.5246188464585935,
+    "lat_dist": -1.1884273638712015,
+    "drift_ratio": 2.265,
+    "steps": 6000
+  },
+  {
+    "robot": "missing_legs_01",
+    "status": "ok",
+    "ssm": 0.050274385361407214,
+    "num_legs": 4,
+    "fwd_dist": -0.0005321174860437108,
+    "lat_dist": 0.11563554783499619,
+    "drift_ratio": 11.564,
+    "steps": 6000
+  },
+  {
+    "robot": "missing_legs_12",
+    "status": "ok",
+    "ssm": 0.050274385361407284,
+    "num_legs": 4,
+    "fwd_dist": 0.5029626654923982,
+    "lat_dist": 0.2601774409686803,
+    "drift_ratio": 0.517,
+    "steps": 6000
+  },
+  {
+    "robot": "missing_legs_34",
+    "status": "ok",
+    "ssm": 0.050274385361407145,
+    "num_legs": 4,
+    "fwd_dist": 0.08686336337259312,
+    "lat_dist": -0.17540022529346255,
+    "drift_ratio": 2.019,
+    "steps": 6000
+  },
+  {
+    "robot": "missing_legs_45",
+    "status": "ok",
+    "ssm": 0.050274385361407284,
+    "num_legs": 4,
+    "fwd_dist": 0.8103091326522495,
+    "lat_dist": -1.4346446001826645,
+    "drift_ratio": 1.77,
+    "steps": 6000
+  },
+  {
+    "robot": "missing_legs_03",
+    "status": "ok",
+    "ssm": 0.3001106118454707,
+    "num_legs": 4,
+    "fwd_dist": 2.0970828291216788,
+    "lat_dist": 1.4918603250167577,
+    "drift_ratio": 0.711,
+    "steps": 6000
+  },
+  {
+    "robot": "missing_legs_14",
+    "status": "ok",
+    "ssm": 0.48780808239311696,
+    "num_legs": 4,
+    "fwd_dist": -0.22518381383270047,
+    "lat_dist": -0.148679859936237,
+    "drift_ratio": 0.66,
+    "steps": 6000
+  },
+  {
+    "robot": "missing_legs_25",
+    "status": "ok",
+    "ssm": 0.3001106118454707,
+    "num_legs": 4,
+    "fwd_dist": -0.1740239234564232,
+    "lat_dist": -0.06870898232561601,
+    "drift_ratio": 0.395,
+    "steps": 6000
+  },
+  {
+    "robot": "missing_legs_05",
+    "status": "ok",
+    "ssm": 0.05105755680039456,
+    "num_legs": 4,
+    "fwd_dist": 2.477302387356757,
+    "lat_dist": 1.6546880826354045,
+    "drift_ratio": 0.668,
+    "steps": 6000
+  },
+  {
+    "robot": "missing_legs_23",
+    "status": "ok",
+    "ssm": 0.05105755680039453,
+    "num_legs": 4,
+    "fwd_dist": 1.3536303639411926,
+    "lat_dist": 0.03392742574215039,
+    "drift_ratio": 0.025,
+    "steps": 6000
+  },
+  {
+    "robot": "missing_legs_02",
+    "status": "ok",
+    "ssm": 0.3207134236248201,
+    "num_legs": 4,
+    "fwd_dist": 1.3788516670465472,
+    "lat_dist": -0.4159825146198263,
+    "drift_ratio": 0.302,
+    "steps": 6000
+  },
+  {
+    "robot": "missing_legs_35",
+    "status": "ok",
+    "ssm": 0.3207134236248201,
+    "num_legs": 4,
+    "fwd_dist": 0.6403910815715792,
+    "lat_dist": -0.26827211678028046,
+    "drift_ratio": 0.419,
+    "steps": 6000
+  }
+]
