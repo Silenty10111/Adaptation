@@ -22,6 +22,22 @@ from typing import Dict, List, Tuple
 import numpy as np
 
 
+# ===========================================================================
+# USER HYPERPARAMETER — change this one path to select the robot to visualize.
+#
+# Accepted values:
+#   1. A robot directory containing robot_description.json and robot.urdf
+#      (or generated_robot.urdf).
+#   2. A direct path to a .urdf file.
+#   3. A direct path to robot_description.json.
+#
+# Example for a robot from the 500-robot batch:
+# ROBOT_MODEL_PATH = REPO_ROOT / "batch_results/20260818_131804/robot_00_seed7"
+# ===========================================================================
+REPO_ROOT = Path(__file__).resolve().parents[1]
+ROBOT_MODEL_PATH = REPO_ROOT / "batch_results/20260818_131804/robot_05_seed350292"
+
+
 TARGET_PYTHON = "/data/conda/envs/unitree-rl/bin/python"
 TARGET_LD_PATH = "/data/conda/envs/unitree-rl/lib"
 ASSET_DIR_NAME = "robot_assets"
@@ -99,6 +115,88 @@ def compute_plan(description: dict, state: dict) -> dict:
 
 def load_description(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _repo_relative_path(path: Path) -> Path:
+    """Resolve user paths relative to the repository, independent of cwd."""
+    path = path.expanduser()
+    if path.is_absolute():
+        return path.resolve()
+    repo_candidate = (REPO_ROOT / path).resolve()
+    if repo_candidate.exists():
+        return repo_candidate
+    return (Path.cwd() / path).resolve()
+
+
+def resolve_robot_model(model_path: Path) -> tuple[Path, Path]:
+    """Resolve one model hyperparameter into description and URDF paths.
+
+    ``model_path`` may be a robot directory, a URDF, or a JSON description.
+    Resolution is intentionally strict: a typo must not silently load a
+    fallback robot and produce a misleading visualization.
+    """
+    model_path = _repo_relative_path(Path(model_path))
+    if not model_path.exists():
+        raise FileNotFoundError(f"robot model path does not exist: {model_path}")
+
+    if model_path.is_dir():
+        description_path = model_path / "robot_description.json"
+        explicit_urdf = None
+    elif model_path.suffix.lower() == ".urdf":
+        description_path = model_path.parent / "robot_description.json"
+        explicit_urdf = model_path
+    elif model_path.suffix.lower() == ".json":
+        description_path = model_path
+        explicit_urdf = None
+    else:
+        raise ValueError(
+            "ROBOT_MODEL_PATH must be a robot directory, a .urdf file, "
+            f"or robot_description.json: {model_path}"
+        )
+
+    if not description_path.is_file():
+        raise FileNotFoundError(
+            f"robot description not found next to model: {description_path}"
+        )
+
+    urdf_candidates: List[Path] = []
+    if explicit_urdf is not None:
+        urdf_candidates.append(explicit_urdf)
+    else:
+        # Prefer the two file names used by batch and standard robot assets.
+        urdf_candidates.extend([
+            description_path.parent / "robot.urdf",
+            description_path.parent / "generated_robot.urdf",
+        ])
+        try:
+            description = load_description(description_path)
+            declared = description.get("urdf_path")
+            if declared:
+                declared_path = Path(str(declared)).expanduser()
+                if declared_path.is_absolute():
+                    urdf_candidates.append(declared_path)
+                else:
+                    urdf_candidates.extend([
+                        REPO_ROOT / declared_path,
+                        description_path.parent / declared_path,
+                        description_path.parent / declared_path.name,
+                    ])
+        except (json.JSONDecodeError, OSError) as exc:
+            raise ValueError(
+                f"cannot read robot description {description_path}: {exc}"
+            ) from exc
+        urdf_candidates.extend(sorted(description_path.parent.glob("*.urdf")))
+
+    urdf_path = next(
+        (candidate.resolve() for candidate in urdf_candidates if candidate.is_file()),
+        None,
+    )
+    if urdf_path is None:
+        checked = ", ".join(str(path) for path in dict.fromkeys(urdf_candidates))
+        raise FileNotFoundError(
+            f"no URDF found for {description_path}; checked: {checked}"
+        )
+    return description_path.resolve(), urdf_path
 
 
 def resolve_asset_paths(description_path: Path, urdf_path: Path) -> tuple[Path, Path]:
@@ -493,10 +591,15 @@ def build_gait_targets(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument(
+        "--model", type=Path, default=ROBOT_MODEL_PATH,
+        help=("Robot directory, URDF, or robot_description.json. The default "
+              "is ROBOT_MODEL_PATH at the top of this file."),
+    )
     p.add_argument("--description", type=Path,
-                   default=Path(ASSET_DIR_NAME) / "robot_description.json")
+                   help="Legacy override for robot_description.json.")
     p.add_argument("--urdf", type=Path,
-                   default=Path(ASSET_DIR_NAME) / "generated_robot.urdf")
+                   help="Legacy override for the URDF path.")
     p.add_argument("--headless", action="store_true")
     p.add_argument("--steps", type=int, default=2400)
     p.add_argument("--hold-steps", type=int, default=300,
@@ -520,13 +623,29 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+
+    try:
+        if args.description is not None and args.urdf is not None:
+            desc_path = _repo_relative_path(args.description)
+            urdf_path = _repo_relative_path(args.urdf)
+            if not desc_path.is_file():
+                raise FileNotFoundError(f"robot description does not exist: {desc_path}")
+            if not urdf_path.is_file():
+                raise FileNotFoundError(f"URDF does not exist: {urdf_path}")
+        elif args.description is not None:
+            desc_path, urdf_path = resolve_robot_model(args.description)
+        elif args.urdf is not None:
+            desc_path, urdf_path = resolve_robot_model(args.urdf)
+        else:
+            desc_path, urdf_path = resolve_robot_model(args.model)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"[ERROR] Cannot resolve robot model: {exc}")
+        return 2
+
+    print(f"[Model] description = {desc_path}")
+    print(f"[Model] URDF        = {urdf_path}")
+
     gymapi = load_gymapi()
-
-    desc_path, urdf_path = resolve_asset_paths(args.description, args.urdf)
-    if (desc_path, urdf_path) != (args.description, args.urdf):
-        print(f"[INFO] Using resolved description: {desc_path}")
-        print(f"[INFO] Using resolved URDF: {urdf_path}")
-
     description = load_description(desc_path)
     gait_plan = compute_plan(description, {})
 

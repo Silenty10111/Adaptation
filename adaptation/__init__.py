@@ -11,4 +11,8 @@
   topology    — 拓扑不变零样本步态 (zero_shot_gait_plan)
   utils       — 共享工具 (compute_metrics, ratio_to_joint, ...)
   mpc         — MPC 桥接 (RobotPhysicsParser, AdaptiveMPCWeights)
+  validation  — 直线匀速行走验收指标 (evaluate_trajectory)
+  morphology  — 缺腿与形态拓扑安全变换 (amputate_legs)
+  kinematics  — 数值多足 IK 与站姿质心补偿 (compensated_stance_ik)
+  autotune    — 仿真探针候选生成与自动选择 (generate_candidates)
 """

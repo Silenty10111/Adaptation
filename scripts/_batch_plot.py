@@ -14,6 +14,22 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
+def project_to_path_frame(com_trail, forward_axis):
+    """Project world XY samples into (lateral, commanded-forward) coordinates."""
+    trail = np.asarray(com_trail, dtype=float)
+    if trail.ndim != 2 or len(trail) == 0 or trail.shape[1] < 2:
+        trail = np.zeros((2, 2), dtype=float)
+    fwd = np.asarray(forward_axis, dtype=float)[:2]
+    norm = float(np.linalg.norm(fwd))
+    if norm < 1e-9:
+        fwd = np.array([1.0, 0.0], dtype=float)
+    else:
+        fwd = fwd / norm
+    lat = np.array([-fwd[1], fwd[0]], dtype=float)
+    delta = trail[:, :2] - trail[0, :2]
+    return delta @ lat, delta @ fwd, fwd, lat
+
+
 def main():
     data_path = Path(sys.argv[1])
     d = json.loads(data_path.read_text(encoding="utf-8"))
@@ -25,12 +41,11 @@ def main():
     forward_axis = d["forward_axis"]
     fwd_dist     = d["fwd_dist"]
     lat_dist     = d["lat_dist"]
+    metrics      = d.get("metrics", {})
     out_path     = Path(d["out_path"])
 
     trail = np.array(com_trail, dtype=float) if len(com_trail) > 1 else np.zeros((2, 2))
-    fwd   = np.asarray(forward_axis, dtype=float)
-    fwd   = fwd / max(float(np.linalg.norm(fwd)), 1e-9)
-    lat   = np.array([-fwd[1], fwd[0]], dtype=float)
+    lat_vals, fwd_vals, fwd, lat = project_to_path_frame(trail, forward_axis)
 
     # Rotation matrix: world → display frame (forward = +Y, lateral = +X)
     # R @ [world_x, world_y] = [lat_component, fwd_component]
@@ -42,11 +57,6 @@ def main():
         if pts.ndim == 1:
             return R @ pts
         return (R @ pts.T).T
-
-    origin   = trail[0, :2] if len(trail) > 0 else np.zeros(2)
-    delta    = trail[:, :2] - origin
-    fwd_vals = delta @ fwd
-    lat_vals = delta @ lat
 
     total_fwd = float(fwd_vals[-1]) if len(fwd_vals) > 0 else 0.0
 
@@ -88,23 +98,37 @@ def main():
     ax.annotate("", xy=(0.0, arrow_len), xytext=(0.0, 0.0),
                 arrowprops=dict(arrowstyle="->", color="blue", lw=1.5), zorder=6)
 
-    # 3. Initial CoM marker
-    ax.plot(0.0, 0.0, "r+", ms=10, mew=2, zorder=5, label="Initial CoM")
+    # 3. Initial base marker.  Isaac Gym rigid-body state index 0 is the root
+    # body, not the mass-weighted whole-robot centre of mass.
+    ax.plot(0.0, 0.0, "go", ms=5, zorder=8, label="Start")
 
     # 4. Commanded path (dashed blue, straight line forward = +Y)
-    cmd_len = max(total_fwd * 1.05, 0.3)
+    cmd_len = max(float(np.max(fwd_vals)) * 1.05, total_fwd * 1.05, 0.3)
+    guide_y = np.linspace(0.0, cmd_len, 100)
+    ax.fill_betweenx(guide_y, -0.25 * guide_y, 0.25 * guide_y,
+                     color="royalblue", alpha=0.06, zorder=0,
+                     label="Drift-ratio 0.25 guide")
     ax.plot([0.0, 0.0], [0.0, cmd_len], "b--", lw=1.5,
             label="Commanded Path", zorder=6)
 
-    # 5. Actual CoM trajectory
+    # 5. Actual root-body trajectory
     if len(lat_vals) > 1:
         ax.plot(lat_vals, fwd_vals, color="darkorange", lw=1.8,
-                label="Actual CoM Trajectory", zorder=7)
+                label="Actual Base Trajectory", zorder=7)
+        ax.plot(lat_vals[-1], fwd_vals[-1], marker="X", color="crimson",
+                ms=7, zorder=9, label="End")
 
     ssm_str = f"SSM={ssm_result['ssm']:.3f}m ({'✓' if ssm_result['passed'] else '✗'})"
+    motion_str = ""
+    if metrics:
+        motion_str = (
+            f" | locomotion={'PASS' if metrics.get('passed') else 'FAIL'}"
+            f" | v={float(metrics.get('forward_speed', 0.0)):.3f}m/s"
+            f" | CV={float(metrics.get('speed_cv', 0.0)):.3f}"
+        )
     ax.set_title(
-        f"Experimental Log:\nDynamic CoM Trajectory\n"
-        f"{robot_name} | {ssm_str}\n"
+        f"Experimental Log:\nDynamic Base Trajectory\n"
+        f"{robot_name} | {ssm_str}{motion_str}\n"
         f"fwd={fwd_dist:+.3f}m  lat={lat_dist:+.3f}m",
         fontsize=9,
     )

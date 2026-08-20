@@ -133,6 +133,13 @@ class _RobotSimCtx:
         ds["pos"] = stand; ds["vel"].fill(0.0)
         gym.set_actor_dof_states(env, actor, ds, _ga.STATE_ALL)
 
+        # Cache the complete articulated pose before any warm-up can tip an
+        # asymmetric robot.  Resetting only rigid body 0 leaves child links in
+        # their previous fallen poses and contaminates every later probe.
+        initial_rb_states = np.copy(
+            gym.get_actor_rigid_body_states(env, actor, _ga.STATE_ALL)
+        )
+
         if feet_at_ground and triplets:
             fj   = next(iter(triplets.values()))
             _lrr = max(fj["lift_upper"] - fj["lift_lower"], 1e-9)
@@ -172,30 +179,34 @@ class _RobotSimCtx:
             body_length = 0.5
 
         self.gym = gym; self.sim = sim; self.env = env; self.actor = actor
+        self.description = description
+        self.urdf_path = urdf_path
         self.dof_names = list(dof_names)
         self.triplets  = triplets
         self.lower = lower; self.upper = upper
         self.finite_lo = finite_lo; self.finite_hi = finite_hi
         self.stand = stand; self.stand_ev = stand_ev.copy()
+        self.initial_rb_states = initial_rb_states
         self._sl = _sl; self._swl = _swl; self._sd = _sd; self._swd = _swd
         self.fmap = fmap; self.body_length = body_length
         self._closed = False
 
     # ------------------------------------------------------------------
-    def _reset(self):
-        """Teleport robot back to origin and zero all velocities."""
+    def _reset(self, stand_targets=None):
+        """Teleport robot back to origin, zero velocities and level its stance."""
         ga = self._ga
         gym, sim, env, actor = self.gym, self.sim, self.env, self.actor
 
         # Reset DOF positions and velocities
         ds = gym.get_actor_dof_states(env, actor, ga.STATE_ALL)
-        ds["pos"] = self.stand_ev
+        reset_stand = self.stand_ev if stand_targets is None else np.asarray(stand_targets, dtype=np.float32)
+        ds["pos"] = reset_stand
         ds["vel"].fill(0.0)
         gym.set_actor_dof_states(env, actor, ds, ga.STATE_ALL)
 
         # Reset root body pose + velocity
         try:
-            rb = gym.get_actor_rigid_body_states(env, actor, ga.STATE_ALL)
+            rb = np.copy(self.initial_rb_states)
             rb["pose"]["p"][0]["x"] = 0.0
             rb["pose"]["p"][0]["y"] = 0.0
             rb["pose"]["p"][0]["z"] = BODY_HEIGHT
@@ -203,20 +214,49 @@ class _RobotSimCtx:
             rb["pose"]["r"][0]["y"] = 0.0
             rb["pose"]["r"][0]["z"] = 0.0
             rb["pose"]["r"][0]["w"] = 1.0
-            rb["vel"]["linear"][0]["x"]  = 0.0
-            rb["vel"]["linear"][0]["y"]  = 0.0
-            rb["vel"]["linear"][0]["z"]  = 0.0
-            rb["vel"]["angular"][0]["x"] = 0.0
-            rb["vel"]["angular"][0]["y"] = 0.0
-            rb["vel"]["angular"][0]["z"] = 0.0
+            rb["vel"]["linear"]["x"].fill(0.0)
+            rb["vel"]["linear"]["y"].fill(0.0)
+            rb["vel"]["linear"]["z"].fill(0.0)
+            rb["vel"]["angular"]["x"].fill(0.0)
+            rb["vel"]["angular"]["y"].fill(0.0)
+            rb["vel"]["angular"]["z"].fill(0.0)
             gym.set_actor_rigid_body_states(env, actor, rb, ga.STATE_ALL)
         except Exception:
             pass   # If root-state setter is unavailable, DOF reset is sufficient
 
-        # Let physics settle for a few steps
-        for _ in range(5):
-            gym.set_actor_dof_position_targets(env, actor, self.stand_ev)
+        def _roll_pitch(w, x, y, z):
+            sinr = 2.0 * (w * x + y * z)
+            cosr = 1.0 - 2.0 * (x * x + y * y)
+            roll = math.atan2(sinr, cosr)
+            sinp = 2.0 * (w * y - z * x)
+            pitch = math.asin(max(-1.0, min(1.0, sinp)))
+            return roll, pitch
+
+        x_extent = max((abs(float(v[0])) for v in self.fmap.values()), default=1.0)
+        y_extent = max((abs(float(v[1])) for v in self.fmap.values()), default=1.0)
+        level_bias = {lid: 0.0 for lid in self.triplets}
+
+        # Marginal amputated support polygons need an active levelling phase.
+        # A five-step reset was too short: the gait started while the chassis
+        # was already rolling toward the missing side.
+        for _ in range(90):
+            targets = reset_stand.copy()
+            for lid, j in self.triplets.items():
+                b = level_bias.get(lid, 0.0)
+                targets[j["lift_idx"]] += 0.25 * b * (j["lift_upper"] - j["lift_lower"])
+                targets[j["drop_idx"]] += 0.65 * b * (j["drop_upper"] - j["drop_lower"])
+            targets = np.clip(targets, self.finite_lo, self.finite_hi)
+            gym.set_actor_dof_position_targets(env, actor, targets)
             gym.simulate(sim); gym.fetch_results(sim, True)
+            rb = gym.get_actor_rigid_body_states(env, actor, ga.STATE_POS)
+            if rb is not None and len(rb) > 0:
+                q = rb["pose"]["r"][0]
+                roll, pitch = _roll_pitch(float(q["w"]), float(q["x"]), float(q["y"]), float(q["z"]))
+                for lid, foot in self.fmap.items():
+                    tilt = roll * float(foot[1]) / y_extent - pitch * float(foot[0]) / x_extent
+                    raw = float(np.clip(0.70 * tilt, -0.18, 0.18))
+                    level_bias[lid] = 0.85 * level_bias.get(lid, 0.0) + 0.15 * raw
+        return level_bias
 
     # ------------------------------------------------------------------
     def run_episode(self, plan: dict, n_steps: int,
@@ -231,13 +271,38 @@ class _RobotSimCtx:
         ga = self._ga
         gym, sim, env, actor = self.gym, self.sim, self.env, self.actor
 
-        self._reset()
-
         forward_axis = list(plan.get("final_forward_axis", [1.0, 0.0]))
         topo    = plan["topology"]
         group_a = topo["groups"]["group_a"]
         group_b = topo["groups"]["group_b"]
         group_c = topo["groups"].get("group_c", [])
+
+        cpg = plan.get("cpg", {})
+        gait_mode = str(cpg.get("mode", "legacy_sine"))
+        gait_frequency = float(cpg.get("frequency_hz", GAIT_FREQUENCY))
+        duty_factor = float(np.clip(cpg.get("duty_factor", 0.5), 0.50, 0.92))
+        phase_offsets = {
+            int(k): float(v) for k, v in cpg.get("phase_offsets", {}).items()
+        }
+
+        episode_stand = self.stand_ev.copy()
+        stance_override = dict(plan.get("stance_joint_positions", {}))
+        if plan.get("use_stance_ik", False) and not stance_override and len(self.triplets) <= 4:
+            compensation = plan.get("translational_compensation_xy", [0.0, 0.0])
+            if float(np.linalg.norm(np.asarray(compensation[:2], dtype=float))) > 0.06:
+                try:
+                    from adaptation.kinematics import compensated_stance_ik
+                    stance_override = compensated_stance_ik(
+                        self.urdf_path, compensation, BODY_HEIGHT
+                    )
+                except Exception as exc:
+                    print(f"[StanceIK] failed: {exc}")
+        name_to_index = {name: idx for idx, name in enumerate(self.dof_names)}
+        for name, value in stance_override.items():
+            if name in name_to_index:
+                episode_stand[name_to_index[name]] = float(value)
+        episode_stand = np.clip(episode_stand, self.finite_lo, self.finite_hi)
+        level_bias = self._reset(episode_stand)
 
         fwd = np.asarray(forward_axis, dtype=float)
         fwd = fwd / max(float(np.linalg.norm(fwd)), 1e-9)
@@ -258,6 +323,24 @@ class _RobotSimCtx:
             siny = 2.0 * (w * z + x * y)
             cosy = 1.0 - 2.0 * (y * y + z * z)
             return float(np.arctan2(siny, cosy))
+        def _quat_to_roll_pitch(w, x, y, z):
+            sinr = 2.0 * (w * x + y * z)
+            cosr = 1.0 - 2.0 * (x * x + y * y)
+            roll = math.atan2(sinr, cosr)
+            sinp = 2.0 * (w * y - z * x)
+            return roll, math.asin(max(-1.0, min(1.0, sinp)))
+        def _gait_wave(phase_rad, duty):
+            """Return (fore/aft wave, lift alpha) with C2-continuous joins.
+
+            During stance the foot moves slowly from front (+1) to rear (-1).
+            During swing it returns quickly while following a bell lift profile.
+            """
+            q = (phase_rad / (2.0 * math.pi)) % 1.0
+            if q < duty:
+                s = q / max(duty, 1e-9)
+                return 1.0 - 2.0 * _ss(0.0, 1.0, s), 0.0
+            s = (q - duty) / max(1.0 - duty, 1e-9)
+            return -1.0 + 2.0 * _ss(0.0, 1.0, s), math.sin(math.pi * s) ** 2
 
         _sl, _swl, _sd, _swd = self._sl, self._swl, self._sd, self._swd
         com_trail:      List[List[float]] = []
@@ -269,37 +352,64 @@ class _RobotSimCtx:
         # ── Online yaw correction state ────────────────────────────────────
         _base_amplitudes = dict(per_amp)
         _yaw_integral = 0.0
-        _planned_yaw = float(np.arctan2(fwd[1], fwd[0]))
+        # A robot can translate along a morphology-selected axis without
+        # rotating its chassis to that axis (e.g. a damaged robot walking
+        # sideways).  Keep the initial body orientation unless explicitly set.
+        _planned_yaw = float(plan.get("body_yaw_target", 0.0))
         # ── Body height compensation state ─────────────────────────────────
         _height_target = BODY_HEIGHT
         _height_ie = 0.0
+        x_extent = max((abs(float(v[0])) for v in self.fmap.values()), default=1.0)
+        y_extent = max((abs(float(v[1])) for v in self.fmap.values()), default=1.0)
 
         for step in range(n_steps):
-            phase_now = 2.0 * math.pi * GAIT_FREQUENCY * sim_time
-            targets   = self.stand_ev.copy()
+            phase_now = 2.0 * math.pi * gait_frequency * sim_time
+            targets   = episode_stand.copy()
+            stance_weights: Dict[int, float] = {}
 
             for lid, j in self.triplets.items():
+                use_stance_override = bool(stance_override)
+                base_lr = ((episode_stand[j["lift_idx"]] - j["lift_lower"])
+                           / max(j["lift_upper"] - j["lift_lower"], 1e-9))
+                base_dr = ((episode_stand[j["drop_idx"]] - j["drop_lower"])
+                           / max(j["drop_upper"] - j["drop_lower"], 1e-9))
+                base_sr = ((episode_stand[j["swing_idx"]] - j["swing_lower"])
+                           / max(j["swing_upper"] - j["swing_lower"], 1e-9))
                 if lid in group_c:
-                    targets[j["lift_idx"]]  = _rtj(j["lift_lower"], j["lift_upper"], _sl)
-                    targets[j["drop_idx"]]  = _rtj(j["drop_lower"], j["drop_upper"], _sd)
-                    targets[j["swing_idx"]] = _rtj(j["swing_lower"], j["swing_upper"], 0.5)
+                    targets[j["lift_idx"]] = _rtj(j["lift_lower"], j["lift_upper"], base_lr if use_stance_override else _sl)
+                    targets[j["drop_idx"]] = _rtj(j["drop_lower"], j["drop_upper"], base_dr if use_stance_override else _sd)
+                    targets[j["swing_idx"]] = _rtj(j["swing_lower"], j["swing_upper"], base_sr if use_stance_override else 0.5)
                     continue
 
-                if   lid in group_b: lg_ph = phase_now + math.pi
-                elif lid in group_a: lg_ph = phase_now
-                else:                lg_ph = 0.0
+                if lid in phase_offsets:
+                    lg_ph = phase_now + phase_offsets[lid]
+                elif lid in group_b:
+                    lg_ph = phase_now + math.pi
+                elif lid in group_a:
+                    lg_ph = phase_now
+                else:
+                    lg_ph = 0.0
 
-                sw    = float(math.sin(lg_ph))
-                alpha = _ss(-0.35, 0.35, sw)
+                if gait_mode in ("tripod", "alternating", "wave"):
+                    sw, alpha = _gait_wave(lg_ph, duty_factor)
+                else:
+                    sw = float(math.sin(lg_ph))
+                    alpha = _ss(-0.35, 0.35, sw)
+                stance_weights[lid] = 1.0 - alpha
                 fv    = self.fmap.get(lid, np.zeros(2))
                 dsign = 1.0 if float(np.dot(fv, lat)) > 0.0 else -1.0
                 eff_amp = SWING_AMP * float(per_amp.get(str(lid), 1.0))
 
-                lr = _sl + (_swl - _sl) * alpha
-                dr = _sd + (_swd - _sd) * alpha
-                sr = 0.5 + eff_amp * dsign * sw
+                if use_stance_override:
+                    lr = base_lr + (_swl - self._sl) * alpha + (_sl - self._sl)
+                    dr = base_dr + (_swd - self._sd) * alpha + (_sd - self._sd)
+                    sr = base_sr + eff_amp * dsign * sw
+                else:
+                    lr = _sl + (_swl - _sl) * alpha
+                    dr = _sd + (_swd - _sd) * alpha
+                    sr = 0.5 + eff_amp * dsign * sw
 
-                is_sw = sw > 0.0
+                is_sw = alpha > 1e-6
                 if not is_sw:
                     if lid in touchdown_ramp:
                         touchdown_ramp[lid] += 1
@@ -322,6 +432,14 @@ class _RobotSimCtx:
                 targets[j["drop_idx"]]  = _rtj(j["drop_lower"], j["drop_upper"], dr)
                 targets[j["swing_idx"]] = _rtj(j["swing_lower"], j["swing_upper"], sr)
 
+            # Per-leg roll/pitch levelling.  Apply mainly to stance legs so it
+            # does not erase swing clearance.
+            for lid, j in self.triplets.items():
+                b = level_bias.get(lid, 0.0) * stance_weights.get(lid, 1.0)
+                targets[j["lift_idx"]] += 0.25 * b * (j["lift_upper"] - j["lift_lower"])
+                targets[j["drop_idx"]] += 0.65 * b * (j["drop_upper"] - j["drop_lower"])
+            targets = np.clip(targets, self.finite_lo, self.finite_hi)
+
             gym.set_actor_dof_position_targets(env, actor, targets)
             gym.simulate(sim); gym.fetch_results(sim, True)
 
@@ -332,7 +450,17 @@ class _RobotSimCtx:
                 p = states["pose"]["p"][0]
                 r = states["pose"]["r"][0]
                 body_yaw = _quat_to_yaw(float(r["w"]), float(r["x"]), float(r["y"]), float(r["z"]))
-                com_trail.append([float(p["x"]), float(p["y"]), body_yaw])
+                body_roll, body_pitch = _quat_to_roll_pitch(
+                    float(r["w"]), float(r["x"]), float(r["y"]), float(r["z"])
+                )
+                for lid, foot in self.fmap.items():
+                    tilt = (body_roll * float(foot[1]) / y_extent
+                            - body_pitch * float(foot[0]) / x_extent)
+                    raw = float(np.clip(0.70 * tilt, -0.18, 0.18))
+                    level_bias[lid] = 0.90 * level_bias.get(lid, 0.0) + 0.10 * raw
+                # Keep yaw as column 2 for backwards compatibility and append
+                # height as column 3 for steady-locomotion validation.
+                com_trail.append([float(p["x"]), float(p["y"]), body_yaw, float(p["z"])])
                 if return_yaw_stats:
                     try:
                         yaw_acc.append(float(states["vel"]["angular"][0]["z"]))
@@ -347,11 +475,28 @@ class _RobotSimCtx:
             if (step + 1) % 60 == 0:
                 yaw_err = body_yaw - _planned_yaw
                 yaw_err = float(np.arctan2(np.sin(yaw_err), np.cos(yaw_err)))
-                if abs(yaw_err) > 0.0087:  # ~0.5°
-                    _yaw_integral += 0.02 * yaw_err
+                # Track the planned line as well as the planned heading.  Pure
+                # yaw regulation cannot remove a steady lateral translation
+                # caused by an amputated/asymmetric contact pattern.
+                lateral_error = 0.0
+                lateral_velocity = 0.0
+                if len(com_trail) >= 2:
+                    p0 = np.asarray(com_trail[0][:2], dtype=float)
+                    pn = np.asarray(com_trail[-1][:2], dtype=float)
+                    lateral_error = float(np.dot(pn - p0, lat))
+                    if len(com_trail) >= 61:
+                        p_prev = np.asarray(com_trail[-61][:2], dtype=float)
+                        lateral_velocity = float(np.dot(pn - p_prev, lat))
+                desired_yaw_offset = float(np.clip(
+                    -2.0 * lateral_error - 0.8 * lateral_velocity,
+                    -0.40, 0.40,
+                ))
+                control_err = yaw_err - desired_yaw_offset
+                if abs(control_err) > 0.0087:  # ~0.5° or equivalent cross-track error
+                    _yaw_integral += 0.02 * control_err
                     _yaw_integral = float(np.clip(_yaw_integral, -0.5, 0.5))
                     # PI: Kp=1.0, Ki=0.3, saturation at 0.3 rad (~17°)
-                    yaw_p = float(np.clip(yaw_err / 0.3, -1.0, 1.0))
+                    yaw_p = float(np.clip(control_err / 0.3, -1.0, 1.0))
                     yaw_i = float(np.clip(_yaw_integral / 0.3, -1.0, 1.0))
                     yaw_signal = float(np.clip(yaw_p + 0.3 * yaw_i, -1.0, 1.0))
                     # Apply via yaw_lever model
@@ -407,5 +552,3 @@ class _RobotSimCtx:
 
     def __exit__(self, *args):
         self.close()
-
-

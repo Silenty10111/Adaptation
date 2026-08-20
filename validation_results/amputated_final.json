@@ -1,0 +1,4259 @@
+[
+  {
+    "robot": "missing_leg_0",
+    "num_legs": 5,
+    "ssm": 0.33065586260240876,
+    "passed": true,
+    "selected_plan": "axis_0_alternating",
+    "final_axis": [
+      1.0,
+      0.0
+    ],
+    "metrics": {
+      "passed": true,
+      "reason": "accepted",
+      "checks": {
+        "forward_speed": true,
+        "lateral_speed": true,
+        "drift_ratio": true,
+        "heading_error": true,
+        "speed_cv": true,
+        "height_std": true,
+        "mean_height": true
+      },
+      "criteria": {
+        "min_forward_speed": 0.02,
+        "max_lateral_speed": 0.02,
+        "max_drift_ratio": 0.25,
+        "max_heading_error_deg": 12.0,
+        "max_speed_cv": 0.35,
+        "max_height_std": 0.035,
+        "min_mean_height": 0.2
+      },
+      "forward_speed": 0.16124211275043032,
+      "lateral_speed": 0.009578836846774264,
+      "drift_ratio": 0.059406545122615305,
+      "heading_error_deg": 3.399748674250713,
+      "body_heading_error_deg": 6.209472221020958,
+      "yaw_std_deg": 7.244833618239679,
+      "speed_mean_abs": 0.15854183156732943,
+      "speed_std": 0.013599529695719708,
+      "speed_cv": 0.08577881030688277,
+      "height_std": 0.014171906464743618,
+      "mean_height": 0.40538938554624715,
+      "steady_samples": 960
+    },
+    "history": [
+      {
+        "name": "axis_0_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.16150342070538062,
+          "lateral_speed": 0.00859970942787502,
+          "drift_ratio": 0.05324784695156933,
+          "heading_error_deg": 3.0479983763158023,
+          "body_heading_error_deg": 5.870707445826669,
+          "yaw_std_deg": 7.094105526382153,
+          "speed_mean_abs": 0.16397551241953026,
+          "speed_std": 0.012981693369066424,
+          "speed_cv": 0.07916848788892848,
+          "height_std": 0.013756265205656332,
+          "mean_height": 0.4055410306383338,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_alternating",
+        "phase": "confirm",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.16124211275043032,
+          "lateral_speed": 0.009578836846774264,
+          "drift_ratio": 0.059406545122615305,
+          "heading_error_deg": 3.399748674250713,
+          "body_heading_error_deg": 6.209472221020958,
+          "yaw_std_deg": 7.244833618239679,
+          "speed_mean_abs": 0.15854183156732943,
+          "speed_std": 0.013599529695719708,
+          "speed_cv": 0.08577881030688277,
+          "height_std": 0.014171906464743618,
+          "mean_height": 0.40538938554624715,
+          "steady_samples": 960
+        }
+      }
+    ]
+  },
+  {
+    "robot": "missing_leg_1",
+    "num_legs": 5,
+    "ssm": 0.5101765692546286,
+    "passed": true,
+    "selected_plan": "axis_0_alternating",
+    "final_axis": [
+      1.0,
+      0.0
+    ],
+    "metrics": {
+      "passed": true,
+      "reason": "accepted",
+      "checks": {
+        "forward_speed": true,
+        "lateral_speed": true,
+        "drift_ratio": true,
+        "heading_error": true,
+        "speed_cv": true,
+        "height_std": true,
+        "mean_height": true
+      },
+      "criteria": {
+        "min_forward_speed": 0.02,
+        "max_lateral_speed": 0.02,
+        "max_drift_ratio": 0.25,
+        "max_heading_error_deg": 12.0,
+        "max_speed_cv": 0.35,
+        "max_height_std": 0.035,
+        "min_mean_height": 0.2
+      },
+      "forward_speed": 0.08663568680676728,
+      "lateral_speed": 0.00759410099888743,
+      "drift_ratio": 0.08765557565008233,
+      "heading_error_deg": 5.009490578174063,
+      "body_heading_error_deg": 4.3150671085526096,
+      "yaw_std_deg": 3.5265947541071005,
+      "speed_mean_abs": 0.08751273370989923,
+      "speed_std": 0.007475150338223936,
+      "speed_cv": 0.08541785887987138,
+      "height_std": 0.012139868016802538,
+      "mean_height": 0.3990693725955983,
+      "steady_samples": 960
+    },
+    "history": [
+      {
+        "name": "axis_0_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.08601319608481034,
+          "lateral_speed": 0.00778744013413139,
+          "drift_ratio": 0.09053773709853606,
+          "heading_error_deg": 5.17332559773089,
+          "body_heading_error_deg": 5.387241810686589,
+          "yaw_std_deg": 4.043057074638207,
+          "speed_mean_abs": 0.08580598594620045,
+          "speed_std": 0.005679401223006945,
+          "speed_cv": 0.06618886969689826,
+          "height_std": 0.012539919665457176,
+          "mean_height": 0.3993117745137877,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_alternating",
+        "phase": "confirm",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.08663568680676728,
+          "lateral_speed": 0.00759410099888743,
+          "drift_ratio": 0.08765557565008233,
+          "heading_error_deg": 5.009490578174063,
+          "body_heading_error_deg": 4.3150671085526096,
+          "yaw_std_deg": 3.5265947541071005,
+          "speed_mean_abs": 0.08751273370989923,
+          "speed_std": 0.007475150338223936,
+          "speed_cv": 0.08541785887987138,
+          "height_std": 0.012139868016802538,
+          "mean_height": 0.3990693725955983,
+          "steady_samples": 960
+        }
+      }
+    ]
+  },
+  {
+    "robot": "missing_leg_2",
+    "num_legs": 5,
+    "ssm": 0.3306558626024088,
+    "passed": true,
+    "selected_plan": "axis_0_alternating",
+    "final_axis": [
+      1.0,
+      0.0
+    ],
+    "metrics": {
+      "passed": true,
+      "reason": "accepted",
+      "checks": {
+        "forward_speed": true,
+        "lateral_speed": true,
+        "drift_ratio": true,
+        "heading_error": true,
+        "speed_cv": true,
+        "height_std": true,
+        "mean_height": true
+      },
+      "criteria": {
+        "min_forward_speed": 0.02,
+        "max_lateral_speed": 0.02,
+        "max_drift_ratio": 0.25,
+        "max_heading_error_deg": 12.0,
+        "max_speed_cv": 0.35,
+        "max_height_std": 0.035,
+        "min_mean_height": 0.2
+      },
+      "forward_speed": 0.05871934954143043,
+      "lateral_speed": 0.004630648803909827,
+      "drift_ratio": 0.07886069651780789,
+      "heading_error_deg": 4.509053249595177,
+      "body_heading_error_deg": 8.528321385184883,
+      "yaw_std_deg": 4.576950854078922,
+      "speed_mean_abs": 0.0606214568337858,
+      "speed_std": 0.005583797811277417,
+      "speed_cv": 0.0921092646550426,
+      "height_std": 0.009068037147624698,
+      "mean_height": 0.39551872508600355,
+      "steady_samples": 960
+    },
+    "history": [
+      {
+        "name": "axis_0_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.06642605940932812,
+          "lateral_speed": 0.011378753185272216,
+          "drift_ratio": 0.17129953645382603,
+          "heading_error_deg": 9.72039630325413,
+          "body_heading_error_deg": 5.451821601607473,
+          "yaw_std_deg": 5.496801321978969,
+          "speed_mean_abs": 0.06493585699892056,
+          "speed_std": 0.006220874571217096,
+          "speed_cv": 0.09580029984543835,
+          "height_std": 0.010202510619582484,
+          "mean_height": 0.3952846492951115,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_alternating",
+        "phase": "confirm",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.05871934954143043,
+          "lateral_speed": 0.004630648803909827,
+          "drift_ratio": 0.07886069651780789,
+          "heading_error_deg": 4.509053249595177,
+          "body_heading_error_deg": 8.528321385184883,
+          "yaw_std_deg": 4.576950854078922,
+          "speed_mean_abs": 0.0606214568337858,
+          "speed_std": 0.005583797811277417,
+          "speed_cv": 0.0921092646550426,
+          "height_std": 0.009068037147624698,
+          "mean_height": 0.39551872508600355,
+          "steady_samples": 960
+        }
+      }
+    ]
+  },
+  {
+    "robot": "missing_leg_3",
+    "num_legs": 5,
+    "ssm": 0.33065586260240876,
+    "passed": true,
+    "selected_plan": "axis_0_alternating",
+    "final_axis": [
+      1.0,
+      0.0
+    ],
+    "metrics": {
+      "passed": true,
+      "reason": "accepted",
+      "checks": {
+        "forward_speed": true,
+        "lateral_speed": true,
+        "drift_ratio": true,
+        "heading_error": true,
+        "speed_cv": true,
+        "height_std": true,
+        "mean_height": true
+      },
+      "criteria": {
+        "min_forward_speed": 0.02,
+        "max_lateral_speed": 0.02,
+        "max_drift_ratio": 0.25,
+        "max_heading_error_deg": 12.0,
+        "max_speed_cv": 0.35,
+        "max_height_std": 0.035,
+        "min_mean_height": 0.2
+      },
+      "forward_speed": 0.06781698019089366,
+      "lateral_speed": -0.006893618853920071,
+      "drift_ratio": 0.1016503364572658,
+      "heading_error_deg": 5.804198861813828,
+      "body_heading_error_deg": 11.686901671088615,
+      "yaw_std_deg": 6.213006463306676,
+      "speed_mean_abs": 0.0712863185531175,
+      "speed_std": 0.010452650729937485,
+      "speed_cv": 0.14662912803035147,
+      "height_std": 0.008989152016601101,
+      "mean_height": 0.39889645849665006,
+      "steady_samples": 960
+    },
+    "history": [
+      {
+        "name": "axis_0_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.07218090522548426,
+          "lateral_speed": -0.013000233277030612,
+          "drift_ratio": 0.18010626545094557,
+          "heading_error_deg": 10.20987109583286,
+          "body_heading_error_deg": 6.585811892435283,
+          "yaw_std_deg": 5.695760860140575,
+          "speed_mean_abs": 0.07051690342339835,
+          "speed_std": 0.010024176090672656,
+          "speed_cv": 0.14215281165262447,
+          "height_std": 0.009907029351942431,
+          "mean_height": 0.3986479276273813,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_alternating",
+        "phase": "confirm",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.06781698019089366,
+          "lateral_speed": -0.006893618853920071,
+          "drift_ratio": 0.1016503364572658,
+          "heading_error_deg": 5.804198861813828,
+          "body_heading_error_deg": 11.686901671088615,
+          "yaw_std_deg": 6.213006463306676,
+          "speed_mean_abs": 0.0712863185531175,
+          "speed_std": 0.010452650729937485,
+          "speed_cv": 0.14662912803035147,
+          "height_std": 0.008989152016601101,
+          "mean_height": 0.39889645849665006,
+          "steady_samples": 960
+        }
+      }
+    ]
+  },
+  {
+    "robot": "missing_leg_4",
+    "num_legs": 5,
+    "ssm": 0.5101765692546286,
+    "passed": true,
+    "selected_plan": "axis_0_alternating",
+    "final_axis": [
+      1.0,
+      0.0
+    ],
+    "metrics": {
+      "passed": true,
+      "reason": "accepted",
+      "checks": {
+        "forward_speed": true,
+        "lateral_speed": true,
+        "drift_ratio": true,
+        "heading_error": true,
+        "speed_cv": true,
+        "height_std": true,
+        "mean_height": true
+      },
+      "criteria": {
+        "min_forward_speed": 0.02,
+        "max_lateral_speed": 0.02,
+        "max_drift_ratio": 0.25,
+        "max_heading_error_deg": 12.0,
+        "max_speed_cv": 0.35,
+        "max_height_std": 0.035,
+        "min_mean_height": 0.2
+      },
+      "forward_speed": 0.08505509469009416,
+      "lateral_speed": -0.0077801215636220545,
+      "drift_ratio": 0.09147155255037483,
+      "heading_error_deg": 5.2263898086460046,
+      "body_heading_error_deg": 7.562745385117451,
+      "yaw_std_deg": 5.63333498211811,
+      "speed_mean_abs": 0.08579325737061974,
+      "speed_std": 0.008841806013911624,
+      "speed_cv": 0.1030594511141564,
+      "height_std": 0.012939340304849905,
+      "mean_height": 0.4010488864655296,
+      "steady_samples": 960
+    },
+    "history": [
+      {
+        "name": "axis_0_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.08235286163247149,
+          "lateral_speed": -0.012564729607623556,
+          "drift_ratio": 0.15257186403185435,
+          "heading_error_deg": 8.67482533482159,
+          "body_heading_error_deg": 10.009170621835342,
+          "yaw_std_deg": 6.146315625332518,
+          "speed_mean_abs": 0.08200031274566258,
+          "speed_std": 0.0074207712310261015,
+          "speed_cv": 0.09049686498200124,
+          "height_std": 0.012833004785960106,
+          "mean_height": 0.4011862873513665,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_alternating",
+        "phase": "confirm",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.08505509469009416,
+          "lateral_speed": -0.0077801215636220545,
+          "drift_ratio": 0.09147155255037483,
+          "heading_error_deg": 5.2263898086460046,
+          "body_heading_error_deg": 7.562745385117451,
+          "yaw_std_deg": 5.63333498211811,
+          "speed_mean_abs": 0.08579325737061974,
+          "speed_std": 0.008841806013911624,
+          "speed_cv": 0.1030594511141564,
+          "height_std": 0.012939340304849905,
+          "mean_height": 0.4010488864655296,
+          "steady_samples": 960
+        }
+      }
+    ]
+  },
+  {
+    "robot": "missing_leg_5",
+    "num_legs": 5,
+    "ssm": 0.33065586260240876,
+    "passed": true,
+    "selected_plan": "axis_0_alternating",
+    "final_axis": [
+      1.0,
+      0.0
+    ],
+    "metrics": {
+      "passed": true,
+      "reason": "accepted",
+      "checks": {
+        "forward_speed": true,
+        "lateral_speed": true,
+        "drift_ratio": true,
+        "heading_error": true,
+        "speed_cv": true,
+        "height_std": true,
+        "mean_height": true
+      },
+      "criteria": {
+        "min_forward_speed": 0.02,
+        "max_lateral_speed": 0.02,
+        "max_drift_ratio": 0.25,
+        "max_heading_error_deg": 12.0,
+        "max_speed_cv": 0.35,
+        "max_height_std": 0.035,
+        "min_mean_height": 0.2
+      },
+      "forward_speed": 0.16516225492121406,
+      "lateral_speed": -0.010187206974367653,
+      "drift_ratio": 0.06167999449527478,
+      "heading_error_deg": 3.5295319541651446,
+      "body_heading_error_deg": 5.779858151883069,
+      "yaw_std_deg": 6.588338187037414,
+      "speed_mean_abs": 0.16330343215463544,
+      "speed_std": 0.011273918990463727,
+      "speed_cv": 0.0690366322478037,
+      "height_std": 0.01636262276475223,
+      "mean_height": 0.40415439680218695,
+      "steady_samples": 960
+    },
+    "history": [
+      {
+        "name": "axis_0_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.1620709512544715,
+          "lateral_speed": -0.006749887051789656,
+          "drift_ratio": 0.04164772897020575,
+          "heading_error_deg": 2.3848608599575547,
+          "body_heading_error_deg": 6.460199374222544,
+          "yaw_std_deg": 7.1054459369403675,
+          "speed_mean_abs": 0.1637338757714439,
+          "speed_std": 0.012063186083100409,
+          "speed_cv": 0.07367556668565892,
+          "height_std": 0.01617492652999126,
+          "mean_height": 0.404159692581743,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_alternating",
+        "phase": "confirm",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.16516225492121406,
+          "lateral_speed": -0.010187206974367653,
+          "drift_ratio": 0.06167999449527478,
+          "heading_error_deg": 3.5295319541651446,
+          "body_heading_error_deg": 5.779858151883069,
+          "yaw_std_deg": 6.588338187037414,
+          "speed_mean_abs": 0.16330343215463544,
+          "speed_std": 0.011273918990463727,
+          "speed_cv": 0.0690366322478037,
+          "height_std": 0.01636262276475223,
+          "mean_height": 0.40415439680218695,
+          "steady_samples": 960
+        }
+      }
+    ]
+  },
+  {
+    "robot": "missing_legs_01",
+    "num_legs": 4,
+    "ssm": 0.050274385361407214,
+    "passed": true,
+    "selected_plan": "axis_1_alternating",
+    "final_axis": [
+      -0.0,
+      1.0
+    ],
+    "metrics": {
+      "passed": true,
+      "reason": "accepted",
+      "checks": {
+        "forward_speed": true,
+        "lateral_speed": true,
+        "drift_ratio": true,
+        "heading_error": true,
+        "speed_cv": true,
+        "height_std": true,
+        "mean_height": true
+      },
+      "criteria": {
+        "min_forward_speed": 0.02,
+        "max_lateral_speed": 0.02,
+        "max_drift_ratio": 0.25,
+        "max_heading_error_deg": 12.0,
+        "max_speed_cv": 0.35,
+        "max_height_std": 0.035,
+        "min_mean_height": 0.2
+      },
+      "forward_speed": 0.028889560537865316,
+      "lateral_speed": -0.0018051348245927018,
+      "drift_ratio": 0.06248398352154668,
+      "heading_error_deg": 3.575420268194044,
+      "body_heading_error_deg": 71.22371844678194,
+      "yaw_std_deg": 5.033397458948872,
+      "speed_mean_abs": 0.02972060359720401,
+      "speed_std": 0.0023058296927526123,
+      "speed_cv": 0.07758354184198113,
+      "height_std": 0.009587733589057554,
+      "mean_height": 0.24432751180914541,
+      "steady_samples": 960
+    },
+    "history": [
+      {
+        "name": "axis_0_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.003549121125884678,
+          "lateral_speed": 0.0069489085155984625,
+          "drift_ratio": 1.957923741998614,
+          "heading_error_deg": 62.944548512771235,
+          "body_heading_error_deg": 2.1614126894316708,
+          "yaw_std_deg": 2.5886432505701467,
+          "speed_mean_abs": 0.001970289294531182,
+          "speed_std": 0.0010208604053694504,
+          "speed_cv": 0.051043020268472516,
+          "height_std": 0.008060378885131218,
+          "mean_height": 0.24878608590612808,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.006448138343251269,
+          "lateral_speed": 0.003906630433124045,
+          "drift_ratio": 0.6058540039254571,
+          "heading_error_deg": 148.79025549099654,
+          "body_heading_error_deg": 13.162482537471249,
+          "yaw_std_deg": 4.010116313238541,
+          "speed_mean_abs": 0.0013117114189903644,
+          "speed_std": 0.0016771496201687176,
+          "speed_cv": 0.08385748100843587,
+          "height_std": 0.024401968873423274,
+          "mean_height": 0.25701929357213277,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_phase_swap",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.0030210567557293435,
+          "lateral_speed": 0.006943135157875392,
+          "drift_ratio": 2.2982471761604426,
+          "heading_error_deg": 66.48545756477031,
+          "body_heading_error_deg": 12.605651323499524,
+          "yaw_std_deg": 2.4653853217304493,
+          "speed_mean_abs": 0.003069851354747416,
+          "speed_std": 0.0012322553476388095,
+          "speed_cv": 0.06161276738194047,
+          "height_std": 0.008176426017350328,
+          "mean_height": 0.24877392213481167,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_1_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.031830313153888866,
+          "lateral_speed": -0.0017116493504980336,
+          "drift_ratio": 0.05377419135723812,
+          "heading_error_deg": 3.078069581877424,
+          "body_heading_error_deg": 72.32037817414921,
+          "yaw_std_deg": 5.063053194803428,
+          "speed_mean_abs": 0.02965667337208276,
+          "speed_std": 0.003205786407247005,
+          "speed_cv": 0.10809662860787228,
+          "height_std": 0.009438579442072494,
+          "mean_height": 0.2432537421377169,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_1_alternating",
+        "phase": "confirm",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.028889560537865316,
+          "lateral_speed": -0.0018051348245927018,
+          "drift_ratio": 0.06248398352154668,
+          "heading_error_deg": 3.575420268194044,
+          "body_heading_error_deg": 71.22371844678194,
+          "yaw_std_deg": 5.033397458948872,
+          "speed_mean_abs": 0.02972060359720401,
+          "speed_std": 0.0023058296927526123,
+          "speed_cv": 0.07758354184198113,
+          "height_std": 0.009587733589057554,
+          "mean_height": 0.24432751180914541,
+          "steady_samples": 960
+        }
+      }
+    ]
+  },
+  {
+    "robot": "missing_legs_12",
+    "num_legs": 4,
+    "ssm": 0.050274385361407284,
+    "passed": true,
+    "selected_plan": "axis_1_alternating",
+    "final_axis": [
+      -0.0,
+      1.0
+    ],
+    "metrics": {
+      "passed": true,
+      "reason": "accepted",
+      "checks": {
+        "forward_speed": true,
+        "lateral_speed": true,
+        "drift_ratio": true,
+        "heading_error": true,
+        "speed_cv": true,
+        "height_std": true,
+        "mean_height": true
+      },
+      "criteria": {
+        "min_forward_speed": 0.02,
+        "max_lateral_speed": 0.02,
+        "max_drift_ratio": 0.25,
+        "max_heading_error_deg": 12.0,
+        "max_speed_cv": 0.35,
+        "max_height_std": 0.035,
+        "min_mean_height": 0.2
+      },
+      "forward_speed": 0.02973863957945075,
+      "lateral_speed": 0.001912275067024609,
+      "drift_ratio": 0.06430270833054454,
+      "heading_error_deg": 3.6792084006341708,
+      "body_heading_error_deg": 106.30010472820075,
+      "yaw_std_deg": 5.281353469045729,
+      "speed_mean_abs": 0.030604789662125823,
+      "speed_std": 0.005139012924938646,
+      "speed_cv": 0.16791531592515077,
+      "height_std": 0.009547188224097228,
+      "mean_height": 0.24435734146585067,
+      "steady_samples": 960
+    },
+    "history": [
+      {
+        "name": "axis_0_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": false,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.00763236958047618,
+          "lateral_speed": 0.030185714752777763,
+          "drift_ratio": 3.954959784703519,
+          "heading_error_deg": 104.18966991008023,
+          "body_heading_error_deg": 6.02447920990219,
+          "yaw_std_deg": 4.785728562910144,
+          "speed_mean_abs": 0.008569392332205349,
+          "speed_std": 0.004467418161294681,
+          "speed_cv": 0.22337090806473403,
+          "height_std": 0.009580443126003216,
+          "mean_height": 0.2443416373959432,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.0083570575584536,
+          "lateral_speed": -0.000685342498447584,
+          "drift_ratio": 0.08200763171175293,
+          "heading_error_deg": 4.688200191700719,
+          "body_heading_error_deg": 9.157856754922266,
+          "yaw_std_deg": 3.7892624077034633,
+          "speed_mean_abs": 0.0070996601349479225,
+          "speed_std": 0.000914547247607101,
+          "speed_cv": 0.04572736238035505,
+          "height_std": 0.011471052215942251,
+          "mean_height": 0.26260923167380196,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_phase_swap",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.0004987617711658063,
+          "lateral_speed": 0.014622778477876082,
+          "drift_ratio": 29.318162143214757,
+          "heading_error_deg": 91.95351862634102,
+          "body_heading_error_deg": 9.155993262312604,
+          "yaw_std_deg": 3.915791789612299,
+          "speed_mean_abs": 0.002772553668170025,
+          "speed_std": 0.003261703037443066,
+          "speed_cv": 0.1630851518721533,
+          "height_std": 0.010835901282269782,
+          "mean_height": 0.2413467890324278,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_1_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.033335985178532805,
+          "lateral_speed": 0.002220101913680201,
+          "drift_ratio": 0.06659775920196497,
+          "heading_error_deg": 3.8101441789148742,
+          "body_heading_error_deg": 104.37799081941878,
+          "yaw_std_deg": 5.197079484270089,
+          "speed_mean_abs": 0.030623864698487543,
+          "speed_std": 0.00498522058516544,
+          "speed_cv": 0.16278874773802313,
+          "height_std": 0.009507739364288786,
+          "mean_height": 0.24347355884189406,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_1_alternating",
+        "phase": "confirm",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.02973863957945075,
+          "lateral_speed": 0.001912275067024609,
+          "drift_ratio": 0.06430270833054454,
+          "heading_error_deg": 3.6792084006341708,
+          "body_heading_error_deg": 106.30010472820075,
+          "yaw_std_deg": 5.281353469045729,
+          "speed_mean_abs": 0.030604789662125823,
+          "speed_std": 0.005139012924938646,
+          "speed_cv": 0.16791531592515077,
+          "height_std": 0.009547188224097228,
+          "mean_height": 0.24435734146585067,
+          "steady_samples": 960
+        }
+      }
+    ]
+  },
+  {
+    "robot": "missing_legs_34",
+    "num_legs": 4,
+    "ssm": 0.050274385361407145,
+    "passed": true,
+    "selected_plan": "axis_3_alternating_axis_refine_1",
+    "final_axis": [
+      -0.06208958822480994,
+      -0.9980705801866286
+    ],
+    "metrics": {
+      "passed": true,
+      "reason": "accepted",
+      "checks": {
+        "forward_speed": true,
+        "lateral_speed": true,
+        "drift_ratio": true,
+        "heading_error": true,
+        "speed_cv": true,
+        "height_std": true,
+        "mean_height": true
+      },
+      "criteria": {
+        "min_forward_speed": 0.02,
+        "max_lateral_speed": 0.02,
+        "max_drift_ratio": 0.25,
+        "max_heading_error_deg": 12.0,
+        "max_speed_cv": 0.35,
+        "max_height_std": 0.035,
+        "min_mean_height": 0.2
+      },
+      "forward_speed": 0.03910115285695925,
+      "lateral_speed": -0.004557171109784113,
+      "drift_ratio": 0.11654825438153353,
+      "heading_error_deg": 6.6477315355027375,
+      "body_heading_error_deg": 105.29434618367213,
+      "yaw_std_deg": 6.12429805380722,
+      "speed_mean_abs": 0.039047792654832894,
+      "speed_std": 0.00872542145637482,
+      "speed_cv": 0.22345492185702043,
+      "height_std": 0.009655823348557567,
+      "mean_height": 0.24540047086775302,
+      "steady_samples": 960
+    },
+    "history": [
+      {
+        "name": "axis_0_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.0027288771193960436,
+          "lateral_speed": -0.018522819228794264,
+          "drift_ratio": 6.78770733102623,
+          "heading_error_deg": 98.38082190980214,
+          "body_heading_error_deg": 11.072354511656886,
+          "yaw_std_deg": 3.89975100015757,
+          "speed_mean_abs": 0.004359214133520021,
+          "speed_std": 0.0022945328674755963,
+          "speed_cv": 0.11472664337377982,
+          "height_std": 0.011579039668641452,
+          "mean_height": 0.24334705975424084,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.002828461126140926,
+          "lateral_speed": 0.009136735874673594,
+          "drift_ratio": 3.2302851151924807,
+          "heading_error_deg": 72.79903336565108,
+          "body_heading_error_deg": 29.586049664210506,
+          "yaw_std_deg": 3.5291776847689333,
+          "speed_mean_abs": 0.0051428256720032275,
+          "speed_std": 0.0011798220050891893,
+          "speed_cv": 0.058991100254459465,
+          "height_std": 0.011072152006827998,
+          "mean_height": 0.2619920279054592,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_phase_swap",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": false,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.0084870053374249,
+          "lateral_speed": -0.03076469522455464,
+          "drift_ratio": 3.624917624228709,
+          "heading_error_deg": 105.42249510056942,
+          "body_heading_error_deg": 6.649306913053253,
+          "yaw_std_deg": 4.677040934853292,
+          "speed_mean_abs": 0.009329691903829042,
+          "speed_std": 0.004016712284259749,
+          "speed_cv": 0.20083561421298746,
+          "height_std": 0.009859814178133227,
+          "mean_height": 0.24469515300976732,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_1_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.003022002137225607,
+          "lateral_speed": -0.0018878829220066898,
+          "drift_ratio": 0.6247126362855216,
+          "heading_error_deg": 148.00645812550493,
+          "body_heading_error_deg": 90.46663625599923,
+          "yaw_std_deg": 3.5756377096274514,
+          "speed_mean_abs": 0.0021309110679780733,
+          "speed_std": 0.00246763393342113,
+          "speed_cv": 0.12338169667105651,
+          "height_std": 0.01203393711291159,
+          "mean_height": 0.2480194538883451,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_1_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.0014911465022874914,
+          "lateral_speed": 0.004261032216574834,
+          "drift_ratio": 2.857554378485416,
+          "heading_error_deg": 109.28747340150319,
+          "body_heading_error_deg": 80.125529182431,
+          "yaw_std_deg": 5.815649182413316,
+          "speed_mean_abs": 0.0012036677833847582,
+          "speed_std": 0.001170772338212038,
+          "speed_cv": 0.0585386169106019,
+          "height_std": 0.016366155241799595,
+          "mean_height": 0.25633101848264533,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_1_phase_swap",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.0004923820495605468,
+          "lateral_speed": 0.0011984159927005353,
+          "drift_ratio": 2.4339148711252307,
+          "heading_error_deg": 112.33583473717238,
+          "body_heading_error_deg": 79.12142413587546,
+          "yaw_std_deg": 3.2090876021649355,
+          "speed_mean_abs": 0.0016756460035284465,
+          "speed_std": 0.002173035976435084,
+          "speed_cv": 0.1086517988217542,
+          "height_std": 0.012214493821795014,
+          "mean_height": 0.24772257218137383,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_2_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.01094737526035726,
+          "lateral_speed": -0.004891539416042595,
+          "drift_ratio": 0.4468230328922663,
+          "heading_error_deg": 155.92380815279733,
+          "body_heading_error_deg": 49.5773488019559,
+          "yaw_std_deg": 2.863537616038642,
+          "speed_mean_abs": 0.009631716498110012,
+          "speed_std": 0.0014527285828837663,
+          "speed_cv": 0.07263642914418832,
+          "height_std": 0.008156751455249914,
+          "mean_height": 0.2472954274983042,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_2_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.0028023200208280976,
+          "lateral_speed": 0.0023196557776586787,
+          "drift_ratio": 0.8277626254025087,
+          "heading_error_deg": 140.38331308563883,
+          "body_heading_error_deg": 32.256335419155484,
+          "yaw_std_deg": 3.451779246466512,
+          "speed_mean_abs": 0.0010861687006870947,
+          "speed_std": 0.0012531815122213928,
+          "speed_cv": 0.06265907561106963,
+          "height_std": 0.01901983755792783,
+          "mean_height": 0.2595272937582599,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_2_phase_swap",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.011103561768838758,
+          "lateral_speed": -0.004327994454344933,
+          "drift_ratio": 0.3897843362740681,
+          "heading_error_deg": 158.7049424678447,
+          "body_heading_error_deg": 43.52284386687444,
+          "yaw_std_deg": 3.0605599285808065,
+          "speed_mean_abs": 0.009775767695409473,
+          "speed_std": 0.0013233112692671882,
+          "speed_cv": 0.0661655634633594,
+          "height_std": 0.008242612188302894,
+          "mean_height": 0.24752426597600183,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_3_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.015260991225709116,
+          "lateral_speed": -0.017285708969433062,
+          "drift_ratio": 1.132672754592313,
+          "heading_error_deg": 48.559761076123266,
+          "body_heading_error_deg": 63.21398651248587,
+          "yaw_std_deg": 4.527291852310292,
+          "speed_mean_abs": 0.012277973578109763,
+          "speed_std": 0.0021617256110903365,
+          "speed_cv": 0.10808628055451683,
+          "height_std": 0.011320848057436548,
+          "mean_height": 0.2433512453507218,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_3_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.005973547993693556,
+          "lateral_speed": 0.00807436604127698,
+          "drift_ratio": 1.3516868115567693,
+          "heading_error_deg": 126.4946412804018,
+          "body_heading_error_deg": 79.36529143111514,
+          "yaw_std_deg": 5.834695437511838,
+          "speed_mean_abs": 0.00445138127507852,
+          "speed_std": 0.002717726708006607,
+          "speed_cv": 0.13588633540033035,
+          "height_std": 0.011326839216227772,
+          "mean_height": 0.2623711981707149,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_3_phase_swap",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": false,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": false,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.02210689906490728,
+          "lateral_speed": -0.02754043577472276,
+          "drift_ratio": 1.2457846617864525,
+          "heading_error_deg": 51.245745492748334,
+          "body_heading_error_deg": 58.39907338344078,
+          "yaw_std_deg": 5.961440990089255,
+          "speed_mean_abs": 0.01811187854962276,
+          "speed_std": 0.007648118637609441,
+          "speed_cv": 0.382405931880472,
+          "height_std": 0.010694863397941531,
+          "mean_height": 0.24400497983313268,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_3_alternating_axis_refine_1",
+        "phase": "confirm",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.03910115285695925,
+          "lateral_speed": -0.004557171109784113,
+          "drift_ratio": 0.11654825438153353,
+          "heading_error_deg": 6.6477315355027375,
+          "body_heading_error_deg": 105.29434618367213,
+          "yaw_std_deg": 6.12429805380722,
+          "speed_mean_abs": 0.039047792654832894,
+          "speed_std": 0.00872542145637482,
+          "speed_cv": 0.22345492185702043,
+          "height_std": 0.009655823348557567,
+          "mean_height": 0.24540047086775302,
+          "steady_samples": 960
+        }
+      }
+    ]
+  },
+  {
+    "robot": "missing_legs_45",
+    "num_legs": 4,
+    "ssm": 0.050274385361407284,
+    "passed": true,
+    "selected_plan": "axis_3_alternating_axis_refine_1",
+    "final_axis": [
+      0.4380690068833568,
+      -0.8989413469232738
+    ],
+    "metrics": {
+      "passed": true,
+      "reason": "accepted",
+      "checks": {
+        "forward_speed": true,
+        "lateral_speed": true,
+        "drift_ratio": true,
+        "heading_error": true,
+        "speed_cv": true,
+        "height_std": true,
+        "mean_height": true
+      },
+      "criteria": {
+        "min_forward_speed": 0.02,
+        "max_lateral_speed": 0.02,
+        "max_drift_ratio": 0.25,
+        "max_heading_error_deg": 12.0,
+        "max_speed_cv": 0.35,
+        "max_height_std": 0.035,
+        "min_mean_height": 0.2
+      },
+      "forward_speed": 0.03846237538045944,
+      "lateral_speed": -0.00032814106069867406,
+      "drift_ratio": 0.008531481934040505,
+      "heading_error_deg": 0.488806048600479,
+      "body_heading_error_deg": 65.26849505249173,
+      "yaw_std_deg": 4.6493253622676,
+      "speed_mean_abs": 0.03773613141444067,
+      "speed_std": 0.003418481406484959,
+      "speed_cv": 0.09058907944063371,
+      "height_std": 0.00792086023551695,
+      "mean_height": 0.24866447815050682,
+      "steady_samples": 960
+    },
+    "history": [
+      {
+        "name": "axis_0_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.003716346362362737,
+          "lateral_speed": -0.006865561785905257,
+          "drift_ratio": 1.847395564481333,
+          "heading_error_deg": 61.57320196963297,
+          "body_heading_error_deg": 15.045133123401266,
+          "yaw_std_deg": 2.4388313942618978,
+          "speed_mean_abs": 0.003628797744473658,
+          "speed_std": 0.0011286738688263546,
+          "speed_cv": 0.056433693441317725,
+          "height_std": 0.007962274433120179,
+          "mean_height": 0.24972949127873612,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.005574153169341709,
+          "lateral_speed": -0.0017651982929395593,
+          "drift_ratio": 0.3166755988422227,
+          "heading_error_deg": 17.571723910542595,
+          "body_heading_error_deg": 4.604874944013356,
+          "yaw_std_deg": 3.46656358739778,
+          "speed_mean_abs": 0.0011729179195002011,
+          "speed_std": 0.0013871897900310072,
+          "speed_cv": 0.06935948950155037,
+          "height_std": 0.025403579069330415,
+          "mean_height": 0.2582373958494928,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_phase_swap",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.0043445523909252624,
+          "lateral_speed": -0.007677531760671864,
+          "drift_ratio": 1.7671628904069387,
+          "heading_error_deg": 60.495398970859746,
+          "body_heading_error_deg": 3.2235976505887995,
+          "yaw_std_deg": 2.598194130173056,
+          "speed_mean_abs": 0.0027108375602438806,
+          "speed_std": 0.001296027011163333,
+          "speed_cv": 0.06480135055816665,
+          "height_std": 0.007610619683794241,
+          "mean_height": 0.24934341153129935,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_1_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.006261011310245679,
+          "lateral_speed": -0.0006800223951754362,
+          "drift_ratio": 0.1086122291557963,
+          "heading_error_deg": 173.80127611493484,
+          "body_heading_error_deg": 82.80864484912068,
+          "yaw_std_deg": 3.2755510915643034,
+          "speed_mean_abs": 0.002910675322256432,
+          "speed_std": 0.0041248766311549195,
+          "speed_cv": 0.20624383155774598,
+          "height_std": 0.010260821846465254,
+          "mean_height": 0.24818638349986738,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_1_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.0020341531090114426,
+          "lateral_speed": -0.004966895800569783,
+          "drift_ratio": 2.441751202781188,
+          "heading_error_deg": 112.2711670721463,
+          "body_heading_error_deg": 97.56525819617399,
+          "yaw_std_deg": 5.515093286377684,
+          "speed_mean_abs": 0.0007612506908746033,
+          "speed_std": 0.0010852804150752813,
+          "speed_cv": 0.05426402075376407,
+          "height_std": 0.017818531796470135,
+          "mean_height": 0.2563285016609977,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_1_phase_swap",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.0012249236521513565,
+          "lateral_speed": -0.0017839461565017699,
+          "drift_ratio": 1.4563733448763043,
+          "heading_error_deg": 124.47493791471261,
+          "body_heading_error_deg": 99.0737717716194,
+          "yaw_std_deg": 3.416430674569339,
+          "speed_mean_abs": 0.0014199604550559656,
+          "speed_std": 0.0022728951961234717,
+          "speed_cv": 0.11364475980617358,
+          "height_std": 0.011580950806059354,
+          "mean_height": 0.24857666516780025,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_2_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.0015941995056274621,
+          "lateral_speed": -0.007817514648364202,
+          "drift_ratio": 4.903724170512335,
+          "heading_error_deg": 101.52609511692891,
+          "body_heading_error_deg": 29.835467093106047,
+          "yaw_std_deg": 2.8148293987023734,
+          "speed_mean_abs": 0.0009995650619182613,
+          "speed_std": 0.0013821567673780292,
+          "speed_cv": 0.06910783836890146,
+          "height_std": 0.007942452620829748,
+          "mean_height": 0.24972280570202404,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_2_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.002715175616340154,
+          "lateral_speed": -0.0063800031529037265,
+          "drift_ratio": 2.349757089194649,
+          "heading_error_deg": 66.9465650885697,
+          "body_heading_error_deg": 47.705258119995555,
+          "yaw_std_deg": 4.123727975114615,
+          "speed_mean_abs": 0.0011995015083295132,
+          "speed_std": 0.001429185142290625,
+          "speed_cv": 0.07145925711453124,
+          "height_std": 0.02424492667556302,
+          "mean_height": 0.25712730882999796,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_2_phase_swap",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.0019804151755353026,
+          "lateral_speed": -0.006467845110640422,
+          "drift_ratio": 3.265903629976061,
+          "heading_error_deg": 107.02427230885434,
+          "body_heading_error_deg": 49.288556760864985,
+          "yaw_std_deg": 3.097455367392132,
+          "speed_mean_abs": 0.0022304733165233953,
+          "speed_std": 0.002199676477530256,
+          "speed_cv": 0.1099838238765128,
+          "height_std": 0.008085075480192607,
+          "mean_height": 0.24918255595386857,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_3_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.030441678033778636,
+          "lateral_speed": -0.010493357325337805,
+          "drift_ratio": 0.34470364326480907,
+          "heading_error_deg": 19.01925905372119,
+          "body_heading_error_deg": 48.79677176404645,
+          "yaw_std_deg": 3.785911646163345,
+          "speed_mean_abs": 0.0285146792269909,
+          "speed_std": 0.001361311000903489,
+          "speed_cv": 0.04774070891931775,
+          "height_std": 0.006790087795787918,
+          "mean_height": 0.2493821896560904,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_3_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.0008634947140382594,
+          "lateral_speed": 0.003258736031357185,
+          "drift_ratio": 3.7738922756309985,
+          "heading_error_deg": 75.15892843602839,
+          "body_heading_error_deg": 28.89177642736506,
+          "yaw_std_deg": 2.426451391044435,
+          "speed_mean_abs": 0.0009458470596399723,
+          "speed_std": 0.0012485785911349593,
+          "speed_cv": 0.06242892955674796,
+          "height_std": 0.020095584866860947,
+          "mean_height": 0.2618446144947989,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_3_phase_swap",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.028444220974748073,
+          "lateral_speed": -0.012628193686314139,
+          "drift_ratio": 0.44396342221940516,
+          "heading_error_deg": 23.939470392112497,
+          "body_heading_error_deg": 40.941971233796444,
+          "yaw_std_deg": 3.6763823727194738,
+          "speed_mean_abs": 0.02703827382814635,
+          "speed_std": 0.0021960962918938683,
+          "speed_cv": 0.08122176385416187,
+          "height_std": 0.006791411933228824,
+          "mean_height": 0.24929025321681467,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_3_alternating_axis_refine_1",
+        "phase": "confirm",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.03846237538045944,
+          "lateral_speed": -0.00032814106069867406,
+          "drift_ratio": 0.008531481934040505,
+          "heading_error_deg": 0.488806048600479,
+          "body_heading_error_deg": 65.26849505249173,
+          "yaw_std_deg": 4.6493253622676,
+          "speed_mean_abs": 0.03773613141444067,
+          "speed_std": 0.003418481406484959,
+          "speed_cv": 0.09058907944063371,
+          "height_std": 0.00792086023551695,
+          "mean_height": 0.24866447815050682,
+          "steady_samples": 960
+        }
+      }
+    ]
+  },
+  {
+    "robot": "missing_legs_03",
+    "num_legs": 4,
+    "ssm": 0.3001106118454707,
+    "passed": true,
+    "selected_plan": "axis_0_legacy",
+    "final_axis": [
+      1.0,
+      0.0
+    ],
+    "metrics": {
+      "passed": true,
+      "reason": "accepted",
+      "checks": {
+        "forward_speed": true,
+        "lateral_speed": true,
+        "drift_ratio": true,
+        "heading_error": true,
+        "speed_cv": true,
+        "height_std": true,
+        "mean_height": true
+      },
+      "criteria": {
+        "min_forward_speed": 0.02,
+        "max_lateral_speed": 0.02,
+        "max_drift_ratio": 0.25,
+        "max_heading_error_deg": 12.0,
+        "max_speed_cv": 0.35,
+        "max_height_std": 0.035,
+        "min_mean_height": 0.2
+      },
+      "forward_speed": 0.17040667742708304,
+      "lateral_speed": -0.010441438225996259,
+      "drift_ratio": 0.06127364481045144,
+      "heading_error_deg": 3.5063374936617024,
+      "body_heading_error_deg": 3.0939485630674906,
+      "yaw_std_deg": 3.6238730777293613,
+      "speed_mean_abs": 0.16416211647536283,
+      "speed_std": 0.03209686254072412,
+      "speed_cv": 0.1955193026860199,
+      "height_std": 0.010601867391448767,
+      "mean_height": 0.4338706743903458,
+      "steady_samples": 960
+    },
+    "history": [
+      {
+        "name": "axis_0_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": false,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.149423430017803,
+          "lateral_speed": -0.020574395228987154,
+          "drift_ratio": 0.13769189494937858,
+          "heading_error_deg": 7.8398669884441645,
+          "body_heading_error_deg": 8.708499650489479,
+          "yaw_std_deg": 9.400073681790113,
+          "speed_mean_abs": 0.15153961816420533,
+          "speed_std": 0.013848895981510989,
+          "speed_cv": 0.09138795616143496,
+          "height_std": 0.01020992433489502,
+          "mean_height": 0.40025796451502377,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.14764202885005784,
+          "lateral_speed": 0.00978551869807036,
+          "drift_ratio": 0.06627867941321999,
+          "heading_error_deg": 3.7919425963024076,
+          "body_heading_error_deg": 2.874688975687856,
+          "yaw_std_deg": 2.74278586096375,
+          "speed_mean_abs": 0.1549903873851352,
+          "speed_std": 0.0398714854515233,
+          "speed_cv": 0.2572513439330063,
+          "height_std": 0.017515144717776206,
+          "mean_height": 0.4381903855957919,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_legacy",
+        "phase": "confirm",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.17040667742708304,
+          "lateral_speed": -0.010441438225996259,
+          "drift_ratio": 0.06127364481045144,
+          "heading_error_deg": 3.5063374936617024,
+          "body_heading_error_deg": 3.0939485630674906,
+          "yaw_std_deg": 3.6238730777293613,
+          "speed_mean_abs": 0.16416211647536283,
+          "speed_std": 0.03209686254072412,
+          "speed_cv": 0.1955193026860199,
+          "height_std": 0.010601867391448767,
+          "mean_height": 0.4338706743903458,
+          "steady_samples": 960
+        }
+      }
+    ]
+  },
+  {
+    "robot": "missing_legs_14",
+    "num_legs": 4,
+    "ssm": 0.48780808239311696,
+    "passed": true,
+    "selected_plan": "axis_0_alternating",
+    "final_axis": [
+      1.0,
+      0.0
+    ],
+    "metrics": {
+      "passed": true,
+      "reason": "accepted",
+      "checks": {
+        "forward_speed": true,
+        "lateral_speed": true,
+        "drift_ratio": true,
+        "heading_error": true,
+        "speed_cv": true,
+        "height_std": true,
+        "mean_height": true
+      },
+      "criteria": {
+        "min_forward_speed": 0.02,
+        "max_lateral_speed": 0.02,
+        "max_drift_ratio": 0.25,
+        "max_heading_error_deg": 12.0,
+        "max_speed_cv": 0.35,
+        "max_height_std": 0.035,
+        "min_mean_height": 0.2
+      },
+      "forward_speed": 0.1346077623158476,
+      "lateral_speed": 0.009030278051530357,
+      "drift_ratio": 0.06708586411488997,
+      "heading_error_deg": 3.837986136769229,
+      "body_heading_error_deg": 7.614446953100717,
+      "yaw_std_deg": 6.816121026114996,
+      "speed_mean_abs": 0.1318144613286177,
+      "speed_std": 0.01434194615617582,
+      "speed_cv": 0.10880404176914159,
+      "height_std": 0.007225160143290976,
+      "mean_height": 0.38452317761257293,
+      "steady_samples": 960
+    },
+    "history": [
+      {
+        "name": "axis_0_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.13388520038646198,
+          "lateral_speed": 0.012119123728378959,
+          "drift_ratio": 0.09051877050933856,
+          "heading_error_deg": 5.172247725771989,
+          "body_heading_error_deg": 7.6828560232619685,
+          "yaw_std_deg": 6.605015184904679,
+          "speed_mean_abs": 0.13344272315759836,
+          "speed_std": 0.012750708903493047,
+          "speed_cv": 0.09555192371512249,
+          "height_std": 0.00844652908702165,
+          "mean_height": 0.38363036947945756,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_alternating",
+        "phase": "confirm",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.1346077623158476,
+          "lateral_speed": 0.009030278051530357,
+          "drift_ratio": 0.06708586411488997,
+          "heading_error_deg": 3.837986136769229,
+          "body_heading_error_deg": 7.614446953100717,
+          "yaw_std_deg": 6.816121026114996,
+          "speed_mean_abs": 0.1318144613286177,
+          "speed_std": 0.01434194615617582,
+          "speed_cv": 0.10880404176914159,
+          "height_std": 0.007225160143290976,
+          "mean_height": 0.38452317761257293,
+          "steady_samples": 960
+        }
+      }
+    ]
+  },
+  {
+    "robot": "missing_legs_25",
+    "num_legs": 4,
+    "ssm": 0.3001106118454707,
+    "passed": true,
+    "selected_plan": "axis_0_alternating",
+    "final_axis": [
+      1.0,
+      0.0
+    ],
+    "metrics": {
+      "passed": true,
+      "reason": "accepted",
+      "checks": {
+        "forward_speed": true,
+        "lateral_speed": true,
+        "drift_ratio": true,
+        "heading_error": true,
+        "speed_cv": true,
+        "height_std": true,
+        "mean_height": true
+      },
+      "criteria": {
+        "min_forward_speed": 0.02,
+        "max_lateral_speed": 0.02,
+        "max_drift_ratio": 0.25,
+        "max_heading_error_deg": 12.0,
+        "max_speed_cv": 0.35,
+        "max_height_std": 0.035,
+        "min_mean_height": 0.2
+      },
+      "forward_speed": 0.14730994905247058,
+      "lateral_speed": -0.006003312852012229,
+      "drift_ratio": 0.040752935498429226,
+      "heading_error_deg": 2.3336798519719544,
+      "body_heading_error_deg": 10.228087966470966,
+      "yaw_std_deg": 5.511895855848807,
+      "speed_mean_abs": 0.14603075759942208,
+      "speed_std": 0.01174011514330724,
+      "speed_cv": 0.08039481090354696,
+      "height_std": 0.014212950389304986,
+      "mean_height": 0.39693021594236294,
+      "steady_samples": 960
+    },
+    "history": [
+      {
+        "name": "axis_0_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.1486373648857293,
+          "lateral_speed": 0.008260303039265716,
+          "drift_ratio": 0.05557352988339199,
+          "heading_error_deg": 3.1808568031878273,
+          "body_heading_error_deg": 11.734380551060461,
+          "yaw_std_deg": 10.361365264056293,
+          "speed_mean_abs": 0.1410914704225944,
+          "speed_std": 0.017639362709942093,
+          "speed_cv": 0.12502075892404424,
+          "height_std": 0.01660546257505013,
+          "mean_height": 0.39716298438401687,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_alternating",
+        "phase": "confirm",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.14730994905247058,
+          "lateral_speed": -0.006003312852012229,
+          "drift_ratio": 0.040752935498429226,
+          "heading_error_deg": 2.3336798519719544,
+          "body_heading_error_deg": 10.228087966470966,
+          "yaw_std_deg": 5.511895855848807,
+          "speed_mean_abs": 0.14603075759942208,
+          "speed_std": 0.01174011514330724,
+          "speed_cv": 0.08039481090354696,
+          "height_std": 0.014212950389304986,
+          "mean_height": 0.39693021594236294,
+          "steady_samples": 960
+        }
+      }
+    ]
+  },
+  {
+    "robot": "missing_legs_05",
+    "num_legs": 4,
+    "ssm": 0.05105755680039456,
+    "passed": true,
+    "selected_plan": "axis_0_legacy",
+    "final_axis": [
+      1.0,
+      0.0
+    ],
+    "metrics": {
+      "passed": true,
+      "reason": "accepted",
+      "checks": {
+        "forward_speed": true,
+        "lateral_speed": true,
+        "drift_ratio": true,
+        "heading_error": true,
+        "speed_cv": true,
+        "height_std": true,
+        "mean_height": true
+      },
+      "criteria": {
+        "min_forward_speed": 0.02,
+        "max_lateral_speed": 0.02,
+        "max_drift_ratio": 0.25,
+        "max_heading_error_deg": 12.0,
+        "max_speed_cv": 0.35,
+        "max_height_std": 0.035,
+        "min_mean_height": 0.2
+      },
+      "forward_speed": 0.028456218299825947,
+      "lateral_speed": -0.005432395293640519,
+      "drift_ratio": 0.1909036273338452,
+      "heading_error_deg": 10.807928908151405,
+      "body_heading_error_deg": 7.397549137149878,
+      "yaw_std_deg": 8.301496531145377,
+      "speed_mean_abs": 0.028158807441379503,
+      "speed_std": 0.0022218627694472488,
+      "speed_cv": 0.07890471832206256,
+      "height_std": 0.003588358694287067,
+      "mean_height": 0.2521901725480954,
+      "steady_samples": 960
+    },
+    "history": [
+      {
+        "name": "axis_0_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.013503589837447455,
+          "lateral_speed": -8.461164391559103e-05,
+          "drift_ratio": 0.006265862998959759,
+          "heading_error_deg": 0.35900280662235534,
+          "body_heading_error_deg": 5.2638773456778845,
+          "yaw_std_deg": 5.37870076570124,
+          "speed_mean_abs": 0.013959340313757304,
+          "speed_std": 0.004467957542687978,
+          "speed_cv": 0.22339787713439888,
+          "height_std": 0.004179468202245917,
+          "mean_height": 0.24250548229449326,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.027462617210719895,
+          "lateral_speed": 0.002821582814921503,
+          "drift_ratio": 0.10274267719174676,
+          "heading_error_deg": 5.866138464767462,
+          "body_heading_error_deg": 7.398943090657974,
+          "yaw_std_deg": 8.316200054262495,
+          "speed_mean_abs": 0.027825281753348533,
+          "speed_std": 0.00220766725419666,
+          "speed_cv": 0.07934033781817812,
+          "height_std": 0.003391407418079411,
+          "mean_height": 0.25163697236631477,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_legacy",
+        "phase": "confirm",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.028456218299825947,
+          "lateral_speed": -0.005432395293640519,
+          "drift_ratio": 0.1909036273338452,
+          "heading_error_deg": 10.807928908151405,
+          "body_heading_error_deg": 7.397549137149878,
+          "yaw_std_deg": 8.301496531145377,
+          "speed_mean_abs": 0.028158807441379503,
+          "speed_std": 0.0022218627694472488,
+          "speed_cv": 0.07890471832206256,
+          "height_std": 0.003588358694287067,
+          "mean_height": 0.2521901725480954,
+          "steady_samples": 960
+        }
+      }
+    ]
+  },
+  {
+    "robot": "missing_legs_23",
+    "num_legs": 4,
+    "ssm": 0.05105755680039453,
+    "passed": false,
+    "selected_plan": "axis_2_alternating",
+    "final_axis": [
+      0.7071067811865476,
+      0.7071067811865476
+    ],
+    "metrics": {
+      "passed": false,
+      "reason": "criteria_failed",
+      "checks": {
+        "forward_speed": false,
+        "lateral_speed": true,
+        "drift_ratio": true,
+        "heading_error": true,
+        "speed_cv": true,
+        "height_std": true,
+        "mean_height": true
+      },
+      "criteria": {
+        "min_forward_speed": 0.02,
+        "max_lateral_speed": 0.02,
+        "max_drift_ratio": 0.25,
+        "max_heading_error_deg": 12.0,
+        "max_speed_cv": 0.35,
+        "max_height_std": 0.035,
+        "min_mean_height": 0.2
+      },
+      "forward_speed": 0.0058480602189020766,
+      "lateral_speed": -0.00034362114856689355,
+      "drift_ratio": 0.05875814128182926,
+      "heading_error_deg": 3.3627271040893856,
+      "body_heading_error_deg": 54.65293020467874,
+      "yaw_std_deg": 4.568364579777025,
+      "speed_mean_abs": 0.0031720816613253168,
+      "speed_std": 0.006719778827487833,
+      "speed_cv": 0.3359889413743916,
+      "height_std": 0.005741631519643037,
+      "mean_height": 0.23751935709474814,
+      "steady_samples": 576
+    },
+    "history": [
+      {
+        "name": "axis_0_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": false,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.009898893729500148,
+          "lateral_speed": 0.0006582844516505365,
+          "drift_ratio": 0.06650081005403187,
+          "heading_error_deg": 3.8046138944791674,
+          "body_heading_error_deg": 5.030491005730394,
+          "yaw_std_deg": 5.029758930530402,
+          "speed_mean_abs": 0.00576804262244241,
+          "speed_std": 0.007735578631305755,
+          "speed_cv": 0.38677893156528775,
+          "height_std": 0.006663720172348129,
+          "mean_height": 0.2374319990631193,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": false,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.003926676252613896,
+          "lateral_speed": 0.0018753374238377031,
+          "drift_ratio": 0.4775890099392164,
+          "heading_error_deg": 154.47137180056032,
+          "body_heading_error_deg": 5.534319928192073,
+          "yaw_std_deg": 5.888192627179131,
+          "speed_mean_abs": 0.007962329303548354,
+          "speed_std": 0.008898052660104227,
+          "speed_cv": 0.4449026330052113,
+          "height_std": 0.006444288138625971,
+          "mean_height": 0.26489295427583986,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_phase_swap",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": false,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.009986898173456606,
+          "lateral_speed": -0.0028597792205603224,
+          "drift_ratio": 0.2863530969166288,
+          "heading_error_deg": 15.97922902005656,
+          "body_heading_error_deg": 4.523851105405769,
+          "yaw_std_deg": 5.084373105413708,
+          "speed_mean_abs": 0.005460002069575669,
+          "speed_std": 0.007035193558406771,
+          "speed_cv": 0.3517596779203385,
+          "height_std": 0.006483592522389144,
+          "mean_height": 0.23724457867340082,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_1_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.002737773501354715,
+          "lateral_speed": 0.013076510636702827,
+          "drift_ratio": 4.776330339318523,
+          "heading_error_deg": 101.82496992171092,
+          "body_heading_error_deg": 98.7090582668772,
+          "yaw_std_deg": 4.506566452303444,
+          "speed_mean_abs": 0.002998237250793038,
+          "speed_std": 0.002488237334728542,
+          "speed_cv": 0.12441186673642711,
+          "height_std": 0.005195419429294425,
+          "mean_height": 0.23681627451959583,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_1_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.0016421601662169332,
+          "lateral_speed": 0.006290636891904084,
+          "drift_ratio": 3.830708490753317,
+          "heading_error_deg": 104.63046266066628,
+          "body_heading_error_deg": 93.69044062631986,
+          "yaw_std_deg": 3.239355134185683,
+          "speed_mean_abs": 0.0020105232597799057,
+          "speed_std": 0.0012438870298808902,
+          "speed_cv": 0.06219435149404451,
+          "height_std": 0.004417552022826362,
+          "mean_height": 0.25265374658111894,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_1_phase_swap",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.0038964971252109693,
+          "lateral_speed": 0.01449865672899329,
+          "drift_ratio": 3.7209463431102323,
+          "heading_error_deg": 105.04273856734692,
+          "body_heading_error_deg": 99.52699932032846,
+          "yaw_std_deg": 4.470429443707441,
+          "speed_mean_abs": 0.0026173993443550465,
+          "speed_std": 0.0021904151604841588,
+          "speed_cv": 0.10952075802420794,
+          "height_std": 0.0042479331522210385,
+          "mean_height": 0.23740258210131693,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_2_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.0058480602189020766,
+          "lateral_speed": -0.00034362114856689355,
+          "drift_ratio": 0.05875814128182926,
+          "heading_error_deg": 3.3627271040893856,
+          "body_heading_error_deg": 54.65293020467874,
+          "yaw_std_deg": 4.568364579777025,
+          "speed_mean_abs": 0.0031720816613253168,
+          "speed_std": 0.006719778827487833,
+          "speed_cv": 0.3359889413743916,
+          "height_std": 0.005741631519643037,
+          "mean_height": 0.23751935709474814,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_2_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.0012818140679423965,
+          "lateral_speed": 0.005272132553197232,
+          "drift_ratio": 4.113024412082015,
+          "heading_error_deg": 76.33481400554675,
+          "body_heading_error_deg": 54.885434147955586,
+          "yaw_std_deg": 6.177501329155107,
+          "speed_mean_abs": 0.0033586876958915214,
+          "speed_std": 0.003963607295725469,
+          "speed_cv": 0.19818036478627346,
+          "height_std": 0.006164357985832473,
+          "mean_height": 0.26243610876715845,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_2_phase_swap",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.0016395389206483165,
+          "lateral_speed": 0.001779489913341917,
+          "drift_ratio": 1.085359969764097,
+          "heading_error_deg": 47.343977689698654,
+          "body_heading_error_deg": 55.047088234727525,
+          "yaw_std_deg": 3.8018577677855725,
+          "speed_mean_abs": 0.0024784046933841904,
+          "speed_std": 0.0033574691544000917,
+          "speed_cv": 0.1678734577200046,
+          "height_std": 0.005797675544835606,
+          "mean_height": 0.23767685571995875,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_3_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.001942664426571262,
+          "lateral_speed": -0.0004176155301663748,
+          "drift_ratio": 0.21497049333602733,
+          "heading_error_deg": 12.132264249044784,
+          "body_heading_error_deg": 52.95707130245196,
+          "yaw_std_deg": 3.6524328148924705,
+          "speed_mean_abs": 0.002749818382881222,
+          "speed_std": 0.0038234908317940864,
+          "speed_cv": 0.19117454158970432,
+          "height_std": 0.006058313250212758,
+          "mean_height": 0.2375402648984972,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_3_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.002606164281549962,
+          "lateral_speed": -0.005285036343430922,
+          "drift_ratio": 2.027898387237414,
+          "heading_error_deg": 116.24889060111592,
+          "body_heading_error_deg": 49.46180725495009,
+          "yaw_std_deg": 5.636400693820541,
+          "speed_mean_abs": 0.0015755149866602067,
+          "speed_std": 0.00201002031573974,
+          "speed_cv": 0.10050101578698699,
+          "height_std": 0.007194745333894052,
+          "mean_height": 0.2628008206374943,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_3_phase_swap",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": false,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.0068289668676274175,
+          "lateral_speed": 0.0012484553928139997,
+          "drift_ratio": 0.1828176087267721,
+          "heading_error_deg": 10.36026723260687,
+          "body_heading_error_deg": 49.83003303979669,
+          "yaw_std_deg": 5.045762828492972,
+          "speed_mean_abs": 0.003066293777999122,
+          "speed_std": 0.007212221704737002,
+          "speed_cv": 0.3606110852368501,
+          "height_std": 0.00710526761160628,
+          "mean_height": 0.23814327243922484,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_2_alternating_axis_refine_1",
+        "phase": "confirm",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.002355279436981222,
+          "lateral_speed": 0.0014757780873770237,
+          "drift_ratio": 0.626583013550417,
+          "heading_error_deg": 147.92944072208948,
+          "body_heading_error_deg": 53.984962350710006,
+          "yaw_std_deg": 4.869439806059013,
+          "speed_mean_abs": 0.0027614221696800317,
+          "speed_std": 0.0030777900977719836,
+          "speed_cv": 0.15388950488859918,
+          "height_std": 0.005350222458804241,
+          "mean_height": 0.23785773113680383,
+          "steady_samples": 960
+        }
+      },
+      {
+        "name": "axis_2_alternating_axis_refine_2",
+        "phase": "confirm",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.002355279436981222,
+          "lateral_speed": 0.0014757780873770237,
+          "drift_ratio": 0.626583013550417,
+          "heading_error_deg": 147.92944072208948,
+          "body_heading_error_deg": 53.984962350710006,
+          "yaw_std_deg": 4.869439806059013,
+          "speed_mean_abs": 0.0027614221696800317,
+          "speed_std": 0.0030777900977719836,
+          "speed_cv": 0.15388950488859918,
+          "height_std": 0.005350222458804241,
+          "mean_height": 0.23785773113680383,
+          "steady_samples": 960
+        }
+      }
+    ]
+  },
+  {
+    "robot": "missing_legs_02",
+    "num_legs": 4,
+    "ssm": 0.3207134236248201,
+    "passed": true,
+    "selected_plan": "axis_0_phase_swap",
+    "final_axis": [
+      1.0,
+      0.0
+    ],
+    "metrics": {
+      "passed": true,
+      "reason": "accepted",
+      "checks": {
+        "forward_speed": true,
+        "lateral_speed": true,
+        "drift_ratio": true,
+        "heading_error": true,
+        "speed_cv": true,
+        "height_std": true,
+        "mean_height": true
+      },
+      "criteria": {
+        "min_forward_speed": 0.02,
+        "max_lateral_speed": 0.02,
+        "max_drift_ratio": 0.25,
+        "max_heading_error_deg": 12.0,
+        "max_speed_cv": 0.35,
+        "max_height_std": 0.035,
+        "min_mean_height": 0.2
+      },
+      "forward_speed": 0.027411721639016624,
+      "lateral_speed": -0.0027822851513175447,
+      "drift_ratio": 0.10149983236942563,
+      "heading_error_deg": 5.795663674571938,
+      "body_heading_error_deg": 23.149240574790195,
+      "yaw_std_deg": 8.341940726938182,
+      "speed_mean_abs": 0.02473927210148762,
+      "speed_std": 0.0036659782638601463,
+      "speed_cv": 0.14818456455878118,
+      "height_std": 0.00919420308399106,
+      "mean_height": 0.3551348799529175,
+      "steady_samples": 960
+    },
+    "history": [
+      {
+        "name": "axis_0_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": false,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.04588437935580378,
+          "lateral_speed": 0.000874986337578815,
+          "drift_ratio": 0.019069372842418986,
+          "heading_error_deg": 1.0924621733319122,
+          "body_heading_error_deg": 18.269736682414944,
+          "yaw_std_deg": 9.625986292289058,
+          "speed_mean_abs": 0.04628194963041054,
+          "speed_std": 0.026615188989098912,
+          "speed_cv": 0.5750662882967842,
+          "height_std": 0.018176245217664994,
+          "mean_height": 0.36779614807003075,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": false,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.047483032682667604,
+          "lateral_speed": -0.0064583831183288405,
+          "drift_ratio": 0.1360145456902608,
+          "heading_error_deg": 7.745528816738437,
+          "body_heading_error_deg": 17.39832110757501,
+          "yaw_std_deg": 7.386323167290025,
+          "speed_mean_abs": 0.04622072496352344,
+          "speed_std": 0.01847747032300427,
+          "speed_cv": 0.3997659131825897,
+          "height_std": 0.016845961426361626,
+          "mean_height": 0.4600176877445645,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_phase_swap",
+        "phase": "probe",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.028584777515219605,
+          "lateral_speed": 0.0022898508154827616,
+          "drift_ratio": 0.08010735134333508,
+          "heading_error_deg": 4.5800328719712615,
+          "body_heading_error_deg": 15.04873640078309,
+          "yaw_std_deg": 5.65886016275016,
+          "speed_mean_abs": 0.02900138089624616,
+          "speed_std": 0.008281710797705615,
+          "speed_cv": 0.28556263673560356,
+          "height_std": 0.01788285110278144,
+          "mean_height": 0.3615530019419061,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_phase_swap",
+        "phase": "confirm",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.027411721639016624,
+          "lateral_speed": -0.0027822851513175447,
+          "drift_ratio": 0.10149983236942563,
+          "heading_error_deg": 5.795663674571938,
+          "body_heading_error_deg": 23.149240574790195,
+          "yaw_std_deg": 8.341940726938182,
+          "speed_mean_abs": 0.02473927210148762,
+          "speed_std": 0.0036659782638601463,
+          "speed_cv": 0.14818456455878118,
+          "height_std": 0.00919420308399106,
+          "mean_height": 0.3551348799529175,
+          "steady_samples": 960
+        }
+      }
+    ]
+  },
+  {
+    "robot": "missing_legs_35",
+    "num_legs": 4,
+    "ssm": 0.3207134236248201,
+    "passed": false,
+    "selected_plan": "axis_3_legacy",
+    "final_axis": [
+      0.7071067811865476,
+      -0.7071067811865476
+    ],
+    "metrics": {
+      "passed": false,
+      "reason": "criteria_failed",
+      "checks": {
+        "forward_speed": false,
+        "lateral_speed": true,
+        "drift_ratio": true,
+        "heading_error": true,
+        "speed_cv": false,
+        "height_std": true,
+        "mean_height": true
+      },
+      "criteria": {
+        "min_forward_speed": 0.02,
+        "max_lateral_speed": 0.02,
+        "max_drift_ratio": 0.25,
+        "max_heading_error_deg": 12.0,
+        "max_speed_cv": 0.35,
+        "max_height_std": 0.035,
+        "min_mean_height": 0.2
+      },
+      "forward_speed": 0.015319767937912237,
+      "lateral_speed": 0.0006254557502054855,
+      "drift_ratio": 0.04082671178442942,
+      "heading_error_deg": 2.337899900428404,
+      "body_heading_error_deg": 54.29767176715751,
+      "yaw_std_deg": 1.7470690604239474,
+      "speed_mean_abs": 0.009189960287536126,
+      "speed_std": 0.007116929687676863,
+      "speed_cv": 0.35584648438384314,
+      "height_std": 0.01600687275551637,
+      "mean_height": 0.4497534410200185,
+      "steady_samples": 576
+    },
+    "history": [
+      {
+        "name": "axis_0_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": false,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.034461030461218047,
+          "lateral_speed": 0.0021842977275019107,
+          "drift_ratio": 0.06338457377123671,
+          "heading_error_deg": 3.626816718029902,
+          "body_heading_error_deg": 20.46801107070639,
+          "yaw_std_deg": 6.119466581803313,
+          "speed_mean_abs": 0.032998144360604116,
+          "speed_std": 0.01580821491257045,
+          "speed_cv": 0.47906375400440976,
+          "height_std": 0.018591579569790326,
+          "mean_height": 0.35871044686064124,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.021777727292931596,
+          "lateral_speed": -0.007746801946474158,
+          "drift_ratio": 0.3557213221688445,
+          "heading_error_deg": 19.581557172540123,
+          "body_heading_error_deg": 18.48117685698904,
+          "yaw_std_deg": 3.098788483433361,
+          "speed_mean_abs": 0.02017746379295331,
+          "speed_std": 0.0056263459698863,
+          "speed_cv": 0.27884307104301287,
+          "height_std": 0.011758760791123953,
+          "mean_height": 0.4456246819140183,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_phase_swap",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": false,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.043813308166420976,
+          "lateral_speed": 0.0017130545947862707,
+          "drift_ratio": 0.03909895569353915,
+          "heading_error_deg": 2.2390646355153936,
+          "body_heading_error_deg": 19.473802447176542,
+          "yaw_std_deg": 8.450332991001336,
+          "speed_mean_abs": 0.04231707054359692,
+          "speed_std": 0.020201153386549736,
+          "speed_cv": 0.4773759886270391,
+          "height_std": 0.018156777590233045,
+          "mean_height": 0.3621993352038165,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_1_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.017280146350031313,
+          "lateral_speed": 0.006873463320991267,
+          "drift_ratio": 0.3977664992969699,
+          "heading_error_deg": 21.69100548600366,
+          "body_heading_error_deg": 84.73053071520559,
+          "yaw_std_deg": 2.039478503024897,
+          "speed_mean_abs": 0.009758553550160592,
+          "speed_std": 0.0045180464414990825,
+          "speed_cv": 0.22590232207495411,
+          "height_std": 0.008071227450208503,
+          "mean_height": 0.3919116985052824,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_1_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": false,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": -0.011708823688652203,
+          "lateral_speed": -0.021153216517489887,
+          "drift_ratio": 1.8066047521059585,
+          "heading_error_deg": 118.9656026797688,
+          "body_heading_error_deg": 72.74123948582707,
+          "yaw_std_deg": 4.497481275056658,
+          "speed_mean_abs": 0.005002529895887156,
+          "speed_std": 0.004556824910879906,
+          "speed_cv": 0.22784124554399532,
+          "height_std": 0.008952103492692758,
+          "mean_height": 0.45070319767627454,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_1_phase_swap",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.009362109847690748,
+          "lateral_speed": 0.007245969966701839,
+          "drift_ratio": 0.7739676295818219,
+          "heading_error_deg": 37.738711222733194,
+          "body_heading_error_deg": 86.30565331012617,
+          "yaw_std_deg": 1.9954787043257296,
+          "speed_mean_abs": 0.008778049995370232,
+          "speed_std": 0.002790832929937676,
+          "speed_cv": 0.1395416464968838,
+          "height_std": 0.00891449014938746,
+          "mean_height": 0.39236635704421335,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_2_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.024297910039762054,
+          "lateral_speed": -0.019815590501662463,
+          "drift_ratio": 0.8155265399055084,
+          "heading_error_deg": 39.19815707845047,
+          "body_heading_error_deg": 34.24939582302893,
+          "yaw_std_deg": 5.62293306400927,
+          "speed_mean_abs": 0.020930912679004564,
+          "speed_std": 0.006759033410015179,
+          "speed_cv": 0.3229211030436837,
+          "height_std": 0.01605958952577589,
+          "mean_height": 0.36373893652732175,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_2_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": false,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.01867557093300342,
+          "lateral_speed": -0.023760646844936367,
+          "drift_ratio": 1.2722848972154641,
+          "heading_error_deg": 51.83309658159893,
+          "body_heading_error_deg": 24.329248009274078,
+          "yaw_std_deg": 4.3614137539185736,
+          "speed_mean_abs": 0.024331243547794333,
+          "speed_std": 0.0052589238473133345,
+          "speed_cv": 0.21613872044735932,
+          "height_std": 0.011258686747546022,
+          "mean_height": 0.44302790829290944,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_2_phase_swap",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": false,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.029546545318334807,
+          "lateral_speed": -0.025645183804018742,
+          "drift_ratio": 0.8679587927359104,
+          "heading_error_deg": 40.956634132663424,
+          "body_heading_error_deg": 30.193985183802255,
+          "yaw_std_deg": 6.270367498442537,
+          "speed_mean_abs": 0.02785839352060949,
+          "speed_std": 0.006574105707690119,
+          "speed_cv": 0.23598294362618688,
+          "height_std": 0.015351622484272276,
+          "mean_height": 0.3663013811326689,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_3_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": false,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.01675149986352349,
+          "lateral_speed": 0.009039981149091589,
+          "drift_ratio": 0.5396520444581928,
+          "heading_error_deg": 28.353608631311936,
+          "body_heading_error_deg": 58.539422291001316,
+          "yaw_std_deg": 3.3884980861020693,
+          "speed_mean_abs": 0.01655706165700878,
+          "speed_std": 0.012440855427038941,
+          "speed_cv": 0.6220427713519471,
+          "height_std": 0.01908697581195416,
+          "mean_height": 0.3531896649963326,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_3_legacy",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": false,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.015319767937912237,
+          "lateral_speed": 0.0006254557502054855,
+          "drift_ratio": 0.04082671178442942,
+          "heading_error_deg": 2.337899900428404,
+          "body_heading_error_deg": 54.29767176715751,
+          "yaw_std_deg": 1.7470690604239474,
+          "speed_mean_abs": 0.009189960287536126,
+          "speed_std": 0.007116929687676863,
+          "speed_cv": 0.35584648438384314,
+          "height_std": 0.01600687275551637,
+          "mean_height": 0.4497534410200185,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_3_phase_swap",
+        "phase": "probe",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": false,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.023578754011500443,
+          "lateral_speed": 0.013272305876448346,
+          "drift_ratio": 0.5628925883859186,
+          "heading_error_deg": 29.374837846507578,
+          "body_heading_error_deg": 55.72999377242014,
+          "yaw_std_deg": 4.812974155906328,
+          "speed_mean_abs": 0.02079498696271049,
+          "speed_std": 0.008524261448758843,
+          "speed_cv": 0.40991905712874566,
+          "height_std": 0.01793839851512006,
+          "mean_height": 0.35385398835771614,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_3_legacy_axis_refine_1",
+        "phase": "confirm",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.010774163614409232,
+          "lateral_speed": 0.014865402918178346,
+          "drift_ratio": 1.3797268586396387,
+          "heading_error_deg": 54.06610855416904,
+          "body_heading_error_deg": 52.39344314087249,
+          "yaw_std_deg": 1.873589809368193,
+          "speed_mean_abs": 0.015161977586112051,
+          "speed_std": 0.005089392242494075,
+          "speed_cv": 0.25446961212470376,
+          "height_std": 0.013847374122216162,
+          "mean_height": 0.4567189528296391,
+          "steady_samples": 960
+        }
+      },
+      {
+        "name": "axis_3_legacy_axis_refine_2",
+        "phase": "confirm",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": false,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.010774163614409232,
+          "lateral_speed": 0.014865402918178346,
+          "drift_ratio": 1.3797268586396387,
+          "heading_error_deg": 54.06610855416904,
+          "body_heading_error_deg": 52.39344314087249,
+          "yaw_std_deg": 1.873589809368193,
+          "speed_mean_abs": 0.015161977586112051,
+          "speed_std": 0.005089392242494075,
+          "speed_cv": 0.25446961212470376,
+          "height_std": 0.013847374122216162,
+          "mean_height": 0.4567189528296391,
+          "steady_samples": 960
+        }
+      },
+      {
+        "name": "axis_3_legacy_speed_rescue",
+        "phase": "confirm",
+        "metrics": {
+          "passed": false,
+          "reason": "criteria_failed",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": false,
+            "heading_error": false,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.02055937295505343,
+          "lateral_speed": 0.011525009084696069,
+          "drift_ratio": 0.5605720130614809,
+          "heading_error_deg": 29.273769958696175,
+          "body_heading_error_deg": 54.18008348463933,
+          "yaw_std_deg": 1.9583478628050204,
+          "speed_mean_abs": 0.02603662934770812,
+          "speed_std": 0.003494819799023585,
+          "speed_cv": 0.13422704422879594,
+          "height_std": 0.015456103739451202,
+          "mean_height": 0.46419487505530316,
+          "steady_samples": 960
+        }
+      }
+    ]
+  }
+]

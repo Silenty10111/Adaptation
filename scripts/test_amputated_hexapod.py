@@ -102,13 +102,14 @@ from adaptation.sim import (
 )
 from adaptation.stability import evaluate_ssm
 from adaptation.gait import compute_adaptive_plan
+from adaptation.morphology import amputate_legs
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Leg amputation helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def amputate_legs(description: dict, remove_leg_ids: List[int]) -> dict:
+def _legacy_amputate_legs(description: dict, remove_leg_ids: List[int]) -> dict:
     """Return a deep copy of *description* with the given leg IDs removed.
 
     Links belonging to removed legs are deleted.  Joints that reference any

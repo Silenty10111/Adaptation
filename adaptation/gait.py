@@ -238,6 +238,12 @@ def compute_adaptive_plan(
     trunk_eigvals, trunk_eigvecs = np.linalg.eigh(trunk_cov)
     trunk_main = trunk_eigvecs[:, -1] / max(float(np.linalg.norm(trunk_eigvecs[:, -1])), EPS)
     trunk_lat  = np.array([-trunk_main[1], trunk_main[0]], dtype=float)
+    # A missing heavy limb can rotate the mass PCA axis far away from the
+    # chassis' intended longitudinal direction.  Always evaluate the trunk axis
+    # itself so damaged robots retain a meaningful straight-ahead candidate.
+    candidate_axes.extend([trunk_main.copy(), -trunk_main.copy()])
+    if description.get("amputation"):
+        candidate_axes = [trunk_main.copy(), -trunk_main.copy()]
 
     def _fixed_swing_dir(leg_id: int) -> np.ndarray:
         """Fixed-frame swing direction using TRUNK lateral axis for dsign.
@@ -516,6 +522,7 @@ def compute_adaptive_plan(
 
     group_a: List[int] = []
     group_b: List[int] = []
+    standard_tripod = False
 
     # Detect standard hexapod: exactly 6 legs, symmetric Y positions (3 left, 3 right)
     if len(active_legs) == 6:
@@ -527,6 +534,7 @@ def compute_adaptive_plan(
         
         # If we have 3 legs on each side, apply diagonal tripod grouping
         if len(y_left) == 3 and len(y_right) == 3:
+            standard_tripod = True
             # Sort each side by X coordinate (front → mid → rear)
             y_left.sort(key=lambda lid: float(foot_xy[lid][0]), reverse=True)  # [front, mid, rear]
             y_right.sort(key=lambda lid: float(foot_xy[lid][0]), reverse=True)  # [front, mid, rear]
@@ -859,11 +867,18 @@ def compute_adaptive_plan(
                 phase_bias[i, j] = float(np.pi)
 
     leg_phase_offsets: Dict[str, float] = {}
-    for lid in active_legs:
-        if lid in group_b_set:
-            leg_phase_offsets[str(lid)] = float(np.pi)
-        else:
-            leg_phase_offsets[str(lid)] = 0.0
+    if standard_tripod:
+        gait_mode = "tripod"
+        duty_factor = max(duty_factor, 0.55)
+        for lid in active_legs:
+            leg_phase_offsets[str(lid)] = float(np.pi if lid in group_b_set else 0.0)
+    else:
+        # Unequal alternating groups keep propulsion coherent.  The executor's
+        # duty-factor waveform provides a stance overlap around transitions.
+        gait_mode = "alternating"
+        duty_factor = max(duty_factor, 0.60)
+        for lid in active_legs:
+            leg_phase_offsets[str(lid)] = float(np.pi if lid in group_b_set else 0.0)
 
     # ---- inhibition rules ----------------------------------------------------
     inhibition_rules: List[Dict] = []
@@ -944,6 +959,7 @@ def compute_adaptive_plan(
             },
         },
         "cpg": {
+            "mode": gait_mode,
             "active_leg_ids": active_legs,
             "phase_offsets": leg_phase_offsets,
             "coupling_weights": coupling.tolist(),

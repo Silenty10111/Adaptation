@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>多足机器人自适应直线匀速行走项目周报</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0 auto; max-width: 980px; padding: 24px 34px 56px;
+      color: #172033; background: #fff;
+      font-family: "Noto Sans CJK SC", "Microsoft YaHei", "Droid Sans Fallback", sans-serif;
+      font-size: 14px; line-height: 1.72;
+    }
+    h1, h2, h3 { color: #12376b; page-break-after: avoid; }
+    h1 { margin: 18px 0 10px; font-size: 30px; line-height: 1.28; text-align: center; }
+    h2 { margin: 30px 0 12px; padding-bottom: 6px; font-size: 21px; border-bottom: 2px solid #2e68b2; }
+    h3 { margin: 22px 0 8px; font-size: 17px; }
+    p { margin: 8px 0; text-align: justify; }
+    ul, ol { margin: 8px 0 8px 22px; padding: 0; }
+    li { margin: 4px 0; }
+    .cover { padding-top: 100px; text-align: center; }
+    .cover .tag { display: inline-block; margin-bottom: 32px; padding: 7px 18px; color: #fff; background: #2166ac; border-radius: 18px; letter-spacing: 2px; }
+    .cover h1 { font-size: 36px; }
+    .cover .sub { margin: 18px auto 70px; color: #52637a; font-size: 19px; text-align: center; }
+    .meta { width: 500px; margin: 0 auto; border-collapse: collapse; font-size: 16px; }
+    .meta td { padding: 10px 14px; border-bottom: 1px solid #c8d1df; text-align: left; }
+    .meta td:first-child { width: 145px; color: #52637a; white-space: nowrap; }
+    .summary { padding: 15px 18px; background: #eff6ff; border-left: 5px solid #2563eb; border-radius: 4px; }
+    .cards { width: 100%; margin: 16px 0; border-collapse: separate; border-spacing: 9px; table-layout: fixed; }
+    .cards td { padding: 14px 8px; background: #f4f7fb; border: 1px solid #dce5f2; border-radius: 6px; text-align: center; }
+    .cards strong { display: block; color: #0f5fab; font-size: 24px; }
+    .cards span { color: #52637a; font-size: 12px; }
+    table.data { width: 100%; margin: 10px 0 16px; border-collapse: collapse; page-break-inside: avoid; font-size: 12px; }
+    table.data th { padding: 7px 6px; color: #fff; background: #285b96; border: 1px solid #d4dfed; text-align: center; }
+    table.data td { padding: 6px; border: 1px solid #cdd7e3; text-align: center; }
+    table.data tr:nth-child(even) td { background: #f5f8fc; }
+    .pass { color: #0b7a37; font-weight: 700; }
+    .warn { color: #a34e00; font-weight: 700; }
+    .flow { width: 100%; margin: 14px 0 20px; border-collapse: separate; border-spacing: 5px; table-layout: fixed; page-break-inside: avoid; }
+    .flow td { padding: 11px 5px; color: #fff; background: #2b6cb0; border-radius: 6px; text-align: center; font-size: 12px; }
+    .flow .arrow { width: 20px; padding: 0; color: #456; background: transparent; font-size: 18px; }
+    .pipeline { margin: 14px 0 20px; padding: 14px 10px; color: #fff; background: #2b6cb0; border-radius: 6px; text-align: center; font-weight: 700; word-spacing: 3px; }
+    figure { margin: 18px auto 22px; page-break-inside: avoid; text-align: center; }
+    figure img { max-width: 100%; max-height: 680px; object-fit: contain; }
+    figure.small img { max-height: 570px; }
+    figcaption { margin-top: 7px; color: #52637a; font-size: 12px; text-align: center; }
+    .image-pair { width: 100%; border-collapse: separate; border-spacing: 12px; table-layout: fixed; page-break-inside: avoid; }
+    .image-pair td { vertical-align: top; text-align: center; }
+    .image-pair img { width: 100%; max-height: 570px; object-fit: contain; }
+    .note { padding: 10px 14px; color: #744210; background: #fff8e6; border: 1px solid #f2d394; border-radius: 4px; }
+    .conclusion { padding: 14px 18px; background: #ecfdf5; border-left: 5px solid #10b981; }
+    code { font-family: "Noto Sans Mono CJK SC", monospace; font-size: 0.92em; }
+    footer { margin-top: 40px; padding-top: 12px; color: #718096; border-top: 1px solid #d6deea; text-align: center; font-size: 11px; }
+    @media print {
+      body { max-width: none; padding: 0; font-size: 10.3pt; }
+      h1 { font-size: 25pt; } h2 { font-size: 16pt; } h3 { font-size: 13pt; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <div class="tag">项目周报</div>
+    <h1>多足机器人自适应<br>直线匀速行走</h1>
+    <p class="sub">形态适配、缺腿验证与 500 台随机机器人批量仿真</p>
+    <table class="meta">
+      <tr><td>汇报日期</td><td>2026 年 8 月 18 日</td></tr>
+      <tr><td>汇报人</td><td>________________</td></tr>
+      <tr><td>指导教师</td><td>________________</td></tr>
+      <tr><td>仿真平台</td><td>Isaac Gym GPU PhysX</td></tr>
+    </table>
+  </section>
+
+  <h2>一、本周进展概述</h2>
+  <div class="summary">
+    本周完成了从机器人形态解析、静态稳定性筛选、候选步态生成、仿真闭环选优、长时轨迹验收到批量报告的完整流程。定向回归案例全部通过；在更严格的 500 台随机机器人泛化测试中，223 台通过全部直线匀速标准，总体通过率为 44.6%。
+  </div>
+  <table class="cards">
+    <tr>
+      <td><strong>1/1</strong><span>标准六足</span></td>
+      <td><strong>6/6</strong><span>单腿缺失</span></td>
+      <td><strong>11/11</strong><span>双腿缺失代表集</span></td>
+      <td><strong>223/500</strong><span>随机批测严格通过</span></td>
+    </tr>
+  </table>
+  <p>当前已经证明算法能够处理标准六足、缺腿构型和部分未知多足构型，但大规模结果也表明尚不能宣称对所有任意构型普适。现阶段主要瓶颈从“能否产生周期运动”转变为“能否选择正确行走方向并抑制侧向漂移”。</p>
+
+  <figure>
+    <img src="assets/validation_overview.png" alt="定向回归与大规模验证通过率" width="650">
+    <figcaption>图 1　定向回归验证与 500 台随机泛化测试的结果对比。小样本全通过不等同于整体泛化成功。</figcaption>
+  </figure>
+
+  <h2>二、算法与工程改进</h2>
+  <div class="pipeline">形态解析　→　静态 SSM 门控　→　方向与步态候选　→　短时仿真排序　→　1200 步长时确认　→　轨迹与报告</div>
+
+  <h3>1. 形态无关的行走方向与步态选择</h3>
+  <ul>
+    <li>从足端分布、支撑多边形和机身主轴生成主轴、侧轴、对角轴及反向轴候选。</li>
+    <li>每个方向尝试交替步态、传统正弦步态和相位交换步态，通过短时仿真评分后选择候选。</li>
+    <li>根据机器人实际位移闭环重估前进方向，并对方向正确但速度不足的构型增加速度补偿。</li>
+  </ul>
+
+  <h3>2. 缺腿构型的安全处理与姿态稳定</h3>
+  <ul>
+    <li>删除指定腿时同步重编号连杆、关节和腿拓扑，检查重名及悬空连接。</li>
+    <li>复位时恢复完整刚体状态并清零速度，避免前一候选的跌倒状态污染后续测试。</li>
+    <li>增加缺腿侧姿态调平和支撑相重叠；标准六足采用三角步态，非标准构型自动采用交替步态。</li>
+  </ul>
+
+  <figure>
+    <img src="assets/amputation_morphologies.png" alt="标准六足及缺腿支撑多边形" width="650">
+    <figcaption>图 2　由最终机器人描述文件重建的足端与支撑多边形。红色方块为足端，绿色区域为支撑凸包，蓝色叉号为机身中心。</figcaption>
+  </figure>
+
+  <h3>3. 统一的直线匀速验收标准</h3>
+  <p>所有最终确认均运行 1200 步（60 Hz，共 20 s），去除前 20% 启动阶段后计算稳态指标。以下七项必须全部满足：</p>
+  <table class="data">
+    <tr><th>指标</th><th>通过条件</th><th>意义</th></tr>
+    <tr><td>前向平均速度</td><td>≥ 0.020 m/s</td><td>排除原地踏步或位移过小</td></tr>
+    <tr><td>侧向平均速度绝对值</td><td>≤ 0.020 m/s</td><td>限制横向平移</td></tr>
+    <tr><td>漂移比</td><td>≤ 0.25</td><td>侧向速度/前向速度</td></tr>
+    <tr><td>实际行进方向误差</td><td>≤ 12°</td><td>限制弧线或错误方向</td></tr>
+    <tr><td>周期平均速度 CV</td><td>≤ 0.35</td><td>衡量周期之间的匀速性</td></tr>
+    <tr><td>机身高度标准差</td><td>≤ 0.035 m</td><td>限制上下振荡</td></tr>
+    <tr><td>平均机身高度</td><td>≥ 0.20 m</td><td>排除倒地滑行</td></tr>
+  </table>
+
+  <h3>4. 路径图和批测工具修正</h3>
+  <p>轨迹不再直接以世界坐标 X/Y 作为前进与横向距离，而是投影到每台机器人自动选择的“前进轴—侧向轴”坐标系。图中加入起点、终点、期望路径和漂移比 0.25 参考区域；使用轨迹 JSON 重新投影核验后，终点指标误差为 0。</p>
+
+  <figure class="small">
+    <img src="assets/standard_trajectory.png" alt="标准六足轨迹" width="430">
+    <figcaption>图 3　标准六足真实仿真轨迹。蓝色虚线为期望路径，橙线为根机身轨迹，阴影为漂移比 0.25 参考区域。</figcaption>
+  </figure>
+
+  <h2>三、标准六足与缺腿构型验证</h2>
+  <h3>1. 标准六足</h3>
+  <table class="data">
+    <tr><th>构型</th><th>SSM (m)</th><th>前向速度</th><th>侧向速度</th><th>漂移比</th><th>方向误差</th><th>速度 CV</th><th>结果</th></tr>
+    <tr><td>标准六足</td><td>0.580</td><td>0.212 m/s</td><td>0.004 m/s</td><td>0.019</td><td>1.07°</td><td>0.066</td><td class="pass">PASS</td></tr>
+  </table>
+  <p>标准六足通过全部七项标准；20 s 仿真中的前向位移约为 3.85 m，横向位移约为 0.013 m。</p>
+
+  <h3>2. 单腿缺失：6/6 PASS</h3>
+  <table class="data">
+    <tr><th>缺失腿</th><th>SSM (m)</th><th>前向速度</th><th>侧向速度</th><th>漂移比</th><th>方向误差</th><th>速度 CV</th></tr>
+    <tr><td>0</td><td>0.331</td><td>0.161</td><td>0.010</td><td>0.059</td><td>3.40°</td><td>0.086</td></tr>
+    <tr><td>1</td><td>0.510</td><td>0.087</td><td>0.008</td><td>0.088</td><td>5.01°</td><td>0.085</td></tr>
+    <tr><td>2</td><td>0.331</td><td>0.059</td><td>0.005</td><td>0.079</td><td>4.51°</td><td>0.092</td></tr>
+    <tr><td>3</td><td>0.331</td><td>0.068</td><td>-0.007</td><td>0.102</td><td>5.80°</td><td>0.147</td></tr>
+    <tr><td>4</td><td>0.510</td><td>0.085</td><td>-0.008</td><td>0.091</td><td>5.23°</td><td>0.103</td></tr>
+    <tr><td>5</td><td>0.331</td><td>0.165</td><td>-0.010</td><td>0.062</td><td>3.53°</td><td>0.069</td></tr>
+  </table>
+  <p>前向速度范围为 0.059–0.165 m/s，最大漂移比为 0.102，最大周期速度 CV 为 0.147。</p>
+
+  <h3>3. 双腿缺失代表集：11/11 PASS</h3>
+  <table class="data">
+    <tr><th>缺失组合</th><th>前向速度</th><th>侧向速度</th><th>漂移比</th><th>方向误差</th><th>速度 CV</th><th>最终候选类型</th></tr>
+    <tr><td>0、1</td><td>0.029</td><td>-0.002</td><td>0.062</td><td>3.58°</td><td>0.078</td><td>侧轴交替</td></tr>
+    <tr><td>0、2</td><td>0.027</td><td>-0.003</td><td>0.101</td><td>5.80°</td><td>0.148</td><td>相位交换</td></tr>
+    <tr><td>0、3</td><td>0.170</td><td>-0.010</td><td>0.061</td><td>3.51°</td><td>0.196</td><td>正弦步态</td></tr>
+    <tr><td>0、5</td><td>0.028</td><td>-0.005</td><td>0.191</td><td>10.81°</td><td>0.079</td><td>正弦步态</td></tr>
+    <tr><td>1、2</td><td>0.030</td><td>0.002</td><td>0.064</td><td>3.68°</td><td>0.168</td><td>侧轴交替</td></tr>
+    <tr><td>1、4</td><td>0.135</td><td>0.009</td><td>0.067</td><td>3.84°</td><td>0.109</td><td>交替步态</td></tr>
+    <tr><td>2、3</td><td>0.027</td><td>-0.005</td><td>0.179</td><td>10.15°</td><td>0.077</td><td>反向轴正弦</td></tr>
+    <tr><td>2、5</td><td>0.147</td><td>-0.006</td><td>0.041</td><td>2.33°</td><td>0.080</td><td>交替步态</td></tr>
+    <tr><td>3、4</td><td>0.039</td><td>-0.005</td><td>0.117</td><td>6.65°</td><td>0.223</td><td>方向闭环修正</td></tr>
+    <tr><td>3、5</td><td>0.028</td><td>0.005</td><td>0.196</td><td>11.11°</td><td>0.158</td><td>补充确认</td></tr>
+    <tr><td>4、5</td><td>0.038</td><td>-0.000</td><td>0.009</td><td>0.49°</td><td>0.091</td><td>方向闭环修正</td></tr>
+  </table>
+  <p>双腿缺失构型速度范围为 0.027–0.170 m/s。部分构型需要侧向或反向行走才能通过，说明严重不对称机器人不能固定使用机身正前方作为行走方向。</p>
+
+  <h3>4. 任意生成构型定向验证：5/5 PASS</h3>
+  <table class="data">
+    <tr><th>机器人</th><th>腿数</th><th>前向速度</th><th>漂移比</th><th>方向误差</th><th>速度 CV</th><th>结果</th></tr>
+    <tr><td>robot_00_seed7</td><td>8</td><td>0.021</td><td>0.035</td><td>2.00°</td><td>0.253</td><td class="pass">PASS</td></tr>
+    <tr><td>robot_01_seed42</td><td>8</td><td>0.044</td><td>0.206</td><td>11.61°</td><td>0.050</td><td class="pass">PASS</td></tr>
+    <tr><td>robot_02_seed137</td><td>9</td><td>0.080</td><td>0.060</td><td>3.41°</td><td>0.184</td><td class="pass">PASS</td></tr>
+    <tr><td>robot_03_seed256</td><td>8</td><td>0.068</td><td>0.144</td><td>8.18°</td><td>0.097</td><td class="pass">PASS</td></tr>
+    <tr><td>robot_04_seed512</td><td>6</td><td>0.118</td><td>0.037</td><td>2.13°</td><td>0.064</td><td class="pass">PASS</td></tr>
+  </table>
+  <div class="note">“任意机器人”在本项目中指描述格式能够表达、关节和足端拓扑有效且物理上可行的多足构型，并不包含无稳定支撑、关节不可达等物理不可行情况。</div>
+
+  <h2>四、500 台随机机器人大规模验证</h2>
+  <p>使用固定随机源 <code>20260818</code> 生成 500 台 4–10 腿机器人，另外加入 1 台标准六足参照。标准六足不计入以下随机样本统计。</p>
+  <table class="cards">
+    <tr>
+      <td><strong>500</strong><span>随机机器人</span></td>
+      <td><strong>454</strong><span>进入动态仿真</span></td>
+      <td><strong>223</strong><span>严格 PASS</span></td>
+      <td><strong>44.6%</strong><span>总体通过率</span></td>
+    </tr>
+  </table>
+  <table class="data">
+    <tr><th>项目</th><th>数量</th><th>占 500 台比例</th></tr>
+    <tr><td>静态稳定性通过并进入动态仿真</td><td>454</td><td>90.8%</td></tr>
+    <tr><td>静态不稳定、跳过动态仿真</td><td>46</td><td>9.2%</td></tr>
+    <tr><td>严格直线匀速 PASS</td><td>223</td><td>44.6%</td></tr>
+    <tr><td>完成动态仿真但未通过严格标准</td><td>231</td><td>46.2%</td></tr>
+  </table>
+  <p>在 454 台动态仿真样本内，通过率为 223/454 = 49.1%。</p>
+
+  <figure>
+    <img src="assets/batch_by_leg.png" alt="500台随机机器人按腿数统计" width="650">
+    <figcaption>图 4　按腿数统计样本量、动态仿真数量和严格通过数量。4 腿、5 腿构型仍是明显薄弱环节。</figcaption>
+  </figure>
+
+  <table class="data">
+    <tr><th>腿数</th><th>总数</th><th>进入动态</th><th>PASS</th><th>总体通过率</th><th>动态样本通过率</th></tr>
+    <tr><td>4</td><td>26</td><td>12</td><td>5</td><td>19.2%</td><td>41.7%</td></tr>
+    <tr><td>5</td><td>54</td><td>45</td><td>9</td><td>16.7%</td><td>20.0%</td></tr>
+    <tr><td>6</td><td>101</td><td>94</td><td>40</td><td>39.6%</td><td>42.6%</td></tr>
+    <tr><td>7</td><td>125</td><td>121</td><td>63</td><td>50.4%</td><td>52.1%</td></tr>
+    <tr><td>8</td><td>101</td><td>94</td><td>48</td><td>47.5%</td><td>51.1%</td></tr>
+    <tr><td>9</td><td>63</td><td>59</td><td>38</td><td>60.3%</td><td>64.4%</td></tr>
+    <tr><td>10</td><td>30</td><td>29</td><td>20</td><td>66.7%</td><td>69.0%</td></tr>
+  </table>
+
+  <figure>
+    <img src="assets/failure_reasons.png" alt="未通过指标频次" width="640">
+    <figcaption>图 5　动态未通过样本的指标频次。同一机器人可能同时违反多项指标，因此频次之和大于 231。</figcaption>
+  </figure>
+  <p>行进方向误差出现 200 次、漂移比超限出现 179 次、前向速度不足出现 127 次，而周期速度 CV 超限仅出现 12 次。由此可以判断，当前主要问题是未知构型的方向选择和侧向力不平衡，而不是周期步态本身不稳定。</p>
+
+  <h3>典型轨迹对比</h3>
+  <table class="image-pair">
+    <tr>
+      <td><img src="assets/random_pass_trajectory.png" alt="随机机器人通过案例" width="285"></td>
+      <td><img src="assets/random_fail_trajectory.png" alt="随机机器人未通过案例" width="285"></td>
+    </tr>
+    <tr>
+      <td><strong>PASS：</strong>robot_00_seed7，能够持续前进，但仍存在可见侧向偏置。</td>
+      <td><strong>FAIL：</strong>robot_01_seed42，侧向位移较大，漂移比超出标准。</td>
+    </tr>
+  </table>
+  <p style="color:#52637a;text-align:center;font-size:12px;">图 6　500 台统一批测流程中的通过与未通过轨迹示例。</p>
+
+  <h2>五、数据完整性与当前不足</h2>
+  <ul>
+    <li>生成 501 张路径图，保存 455 份动态轨迹 JSON；所有动态轨迹均包含 1200 个 <code>[x, y, yaw, z]</code> 样本。</li>
+    <li>46 个 GPU 仿真批次全部正常返回，无空轨迹、样本缺失或子进程失败；当前单元测试为 <strong>54 passed</strong>。</li>
+    <li>Isaac Gym 出现过 <code>Incomplete articulation</code> 警告，虽未造成批次中断，但仍需研究其对多环境复位一致性的潜在影响。</li>
+    <li>定向回归案例共 23 台全部通过，但 500 台随机批测总体通过率仅为 44.6%，说明算法当前具备部分适应能力，尚未达到全面普适。</li>
+    <li>当前工作仍处于仿真阶段，尚未覆盖真实机器人的模型误差、关节间隙、传感器噪声和地面摩擦变化。</li>
+  </ul>
+
+  <h2>六、下周计划</h2>
+  <ol>
+    <li><strong>优化方向候选评分：</strong>融合短时轨迹方向、侧向速度和支撑力矩，对方向误差样本进行二次搜索。</li>
+    <li><strong>增强侧漂抑制：</strong>依据横向位置与速度在线调整左右腿步幅，重点处理 4 腿、5 腿及强不对称构型。</li>
+    <li><strong>分析静态失败：</strong>对 46 台静态失败样本分类，区分构型物理不可行与初始化控制失败。</li>
+    <li><strong>开展消融实验：</strong>分别关闭方向搜索、相位交换、姿态调平和速度补偿，量化每个模块的贡献。</li>
+    <li><strong>进行同种子复测：</strong>在固定的 500 台样本上比较新旧版本，通过率、失败类型和计算耗时保持可复现。</li>
+  </ol>
+
+  <h2>七、阶段结论</h2>
+  <div class="conclusion">
+    本周完成了面向不同腿数和缺腿情况的自适应步态流程，并建立统一的直线匀速验收标准。标准六足、6 种单腿缺失、11 种双腿缺失代表组合以及 5 台定向生成机器人均通过 20 s 长时仿真。500 台随机测试中有 223 台通过全部标准，总体通过率为 44.6%。下一阶段将集中解决行进方向误差、侧漂和少腿构型稳定性问题，并通过消融实验验证各算法模块的实际贡献。
+  </div>
+
+  <footer>
+    数据来源：<code>validation_results/</code> 与 <code>batch_results/20260818_131804/</code><br>
+    本报告由项目现有仿真数据自动整理，图表均可由脚本复现。
+  </footer>
+</body>
+</html>

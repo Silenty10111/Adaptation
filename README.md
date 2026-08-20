@@ -22,6 +22,10 @@
 | `topology_invariant_mapper.py` | 任意 | 拓扑不变映射：N 腿 → 4 节点虚拟支撑多边形，零样本步态 |
 | `centroidal_wbc.py` | 任意 | 质心动力学 + QP 地面反力分配 + 偏航力矩平衡 |
 | `online_state_estimator.py` | 任意 | EKF/RMA 在线状态估计（CoM 偏移/摩擦/腿健康） |
+| `adaptation/morphology.py` | 任意 | 安全缺腿变换、腿编号原子重映射与拓扑完整性检查 |
+| `adaptation/validation.py` | 任意 | 直线匀速轨迹指标与统一通过标准 |
+| `adaptation/autotune.py` | 任意 | 仿真候选生成、评分、行走轴闭环重估 |
+| `scripts/validate_locomotion.py` | unitree-rl | 标准、缺腿、任意构型的有序自动验证入口 |
 
 ## 环境
 
@@ -60,8 +64,56 @@ LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib \
   /data/conda/envs/unitree-rl/bin/python test_gait.py --headless --steps 2400
 
 # 6. 批量测试
-python batch_test.py
+python scripts/batch_test.py --num-robots 500 --execution-mode parallel
 ```
+
+批量测试固定保存可复现随机种子、机器人资产、1200 步根机身轨迹、统一直线匀速指标、每台 `trajectory.png`/`trajectory.json` 以及汇总 HTML。可使用 `--resume-dir PATH` 复用已生成资产，避免长批次重新生成几何。
+
+### 在 Isaac Gym Viewer 中查看指定机器人
+
+打开 `scripts/test_gait.py`，只需修改文件开头的 `ROBOT_MODEL_PATH`：
+
+```python
+# 标准六足
+ROBOT_MODEL_PATH = REPO_ROOT / "robot_assets/standard_hexapod"
+
+# 500 台批测中的指定机器人
+ROBOT_MODEL_PATH = REPO_ROOT / "batch_results/20260818_131804/robot_00_seed7"
+```
+
+该地址可以是机器人目录、URDF 文件或 `robot_description.json`。直接运行下面的命令会打开 Viewer；关闭窗口即可结束仿真：
+
+```bash
+python scripts/test_gait.py
+```
+
+也可不修改源码，临时通过命令行覆盖：
+
+```bash
+python scripts/test_gait.py \
+  --model batch_results/20260818_131804/robot_00_seed7
+```
+
+Viewer 中橙色箭头表示规划前进方向，绿色线框表示支撑多边形，青色十字表示机身投影，足端标记颜色表示当前腿组和支撑/摆动状态。
+
+## 统一直线行走验证
+
+`scripts/validate_locomotion.py` 会在 Isaac Gym 中自动探测候选方向和步态，失败后根据实际轨迹重新估计行走轴，再做长时确认。固定验证顺序为：标准六足 → 标准六足缺腿 → 任意生成机器人。
+
+```bash
+# 完整顺序验证
+python scripts/validate_locomotion.py --stage all
+
+# 分阶段验证
+python scripts/validate_locomotion.py --stage standard \
+  --output validation_results/standard.json
+python scripts/validate_locomotion.py --stage amputated \
+  --output validation_results/amputated.json
+python scripts/validate_locomotion.py --stage arbitrary --arbitrary-count 5 \
+  --output validation_results/arbitrary.json
+```
+
+脚本会自动切换到 `unitree-rl` 环境。每个机器人只有在 1200 步长时仿真中同时满足前向速度、侧向速度、轨迹漂移、行进方向、周期速度波动、机身高度及高度波动阈值后才标记为 `PASS`。可用 `--robots missing_legs_23` 单独复验指定机器人。
 
 ## 核心算法概要
 

@@ -2,7 +2,7 @@
 """Batch robot generation + adaptation.stability check + gait test with trajectory plots.
 
 每次运行会在 OUTPUT_DIR 下新建一个带时间戳的子目录，
-对每个机器人生成一张 demo 图（机器人轮廓 + 前进方向直线 + 实际质心轨迹曲线）。
+对每个机器人生成一张 demo 图（机器人轮廓 + 前进方向直线 + 实际根机身轨迹曲线）。
 
 === 在此处修改批量参数 ====================================================="""
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 # ─────────────────────────── 配置区（直接在这里改参数）──────────────────────
 
-# 要生成的机器人数量（应为 GPU_BATCH_SIZE 的整数倍）
+# 默认生成数量；可用 --num-robots 覆盖。
 NUM_ROBOTS = 30
 
 # 随机种子列表（优先使用此列表；若列表比 NUM_ROBOTS 短则自动补充随机种子）
@@ -46,6 +46,11 @@ USE_GPU = True
 # 设大值为 70，配合 MAX_BATCHES_PER_PROCESS=3，使 210 机器人聚合成 1 个子进程
 GPU_BATCH_SIZE = 10
 
+# 每个隔离子进程最多连续创建的 Isaac Gym 仿真数。大批量运行时隔离
+# PhysX/CUDA 清理状态，避免数十次 create/destroy 后污染主进程。
+ISOLATED_CHUNK_SIZE = 5
+EXECUTION_MODE = "parallel"
+
 # 输出根目录
 OUTPUT_DIR           = "batch_results"
 
@@ -63,6 +68,7 @@ EKF_PROBE_STEPS      = 1200
 
 import os
 import sys
+import argparse
 from pathlib import Path
 
 TARGET_PYTHON  = os.environ.get("ISAAC_PYTHON", "/data/conda/envs/unitree-rl/bin/python")
@@ -100,6 +106,7 @@ from adaptation.sim import (
     GAIT_FREQUENCY, SWING_AMP, SWING_LIFT_RATIO, STANCE_LIFT_RATIO,
     SWING_DROP_RATIO, STANCE_DROP_RATIO, BODY_HEIGHT, HOLD_STEPS, _RobotSimCtx,
 )
+from adaptation.validation import evaluate_trajectory
 
 # ---------------------------------------------------------------------------
 # Isaac Gym imports (available after re-exec)
@@ -974,7 +981,9 @@ def probe_and_correct_plan(
 # Subprocess worker — called in a fresh process to isolate CUDA state
 # ---------------------------------------------------------------------------
 
-def _subbatch_worker(robot_infos: List[dict], use_gpu: bool, result_file: str) -> None:
+def _subbatch_worker(
+    robot_infos: List[dict], use_gpu: bool, result_file: str, run_config: dict,
+) -> None:
     """Run one sub-batch inside an isolated subprocess.
 
     Results are written to ``result_file`` (pickle) BEFORE the process exits.
@@ -992,6 +1001,11 @@ def _subbatch_worker(robot_infos: List[dict], use_gpu: bool, result_file: str) -
     _repo = _Path(__file__).resolve().parent.parent  # scripts/ -> root
     if str(_repo) not in _sys.path:
         _sys.path.insert(0, str(_repo))
+
+    global SIM_STEPS, MAX_SIM_STEPS, MIN_TRAVEL_BODY_LENGTHS
+    SIM_STEPS = int(run_config["sim_steps"])
+    MAX_SIM_STEPS = int(run_config["max_sim_steps"])
+    MIN_TRAVEL_BODY_LENGTHS = float(run_config["min_travel_body_lengths"])
 
     try:
         probe_results, sim_results = run_subbatch_full_pipeline(robot_infos, use_gpu=use_gpu)
@@ -1101,7 +1115,11 @@ def run_subbatch_isolated(
         try:
             p = ctx.Process(
                 target=_subbatch_worker,
-                args=(robot_infos, use_gpu, result_file),
+                args=(robot_infos, use_gpu, result_file, {
+                    "sim_steps": SIM_STEPS,
+                    "max_sim_steps": MAX_SIM_STEPS,
+                    "min_travel_body_lengths": MIN_TRAVEL_BODY_LENGTHS,
+                }),
             )
             p.start()
         finally:
@@ -1179,6 +1197,13 @@ def run_subbatch_full_pipeline(
     def _ss(e0, e1, x):
         t = max(0.0, min(1.0, (x - e0) / max(e1 - e0, 1e-9)))
         return t * t * (3.0 - 2.0 * t)
+    def _gait_wave(phase_rad, duty):
+        q = (phase_rad / (2.0 * math.pi)) % 1.0
+        if q < duty:
+            s = q / max(duty, 1e-9)
+            return 1.0 - 2.0 * _ss(0.0, 1.0, s), 0.0
+        s = (q - duty) / max(1.0 - duty, 1e-9)
+        return -1.0 + 2.0 * _ss(0.0, 1.0, s), math.sin(math.pi * s) ** 2
     def _fwd_vel(trail, fwd_ax):
         if len(trail) < 2:
             return 0.0
@@ -1301,6 +1326,9 @@ def run_subbatch_full_pipeline(
             ds = gym.get_actor_dof_states(env, actor, gymapi.STATE_ALL)
             ds["pos"] = stand; ds["vel"].fill(0.0)
             gym.set_actor_dof_states(env, actor, ds, gymapi.STATE_ALL)
+            initial_rb_states = np.copy(
+                gym.get_actor_rigid_body_states(env, actor, gymapi.STATE_ALL)
+            )
 
             if feet_at_ground and triplets:
                 fj   = next(iter(triplets.values()))
@@ -1331,6 +1359,7 @@ def run_subbatch_full_pipeline(
                 "_sl": _sl, "_swl": _swl, "_sd": _sd, "_swd": _swd,
                 "fmap": fmap, "body_length": body_length,
                 "offset": np.array([ox, oy], dtype=float),
+                "initial_rb_states": initial_rb_states,
             })
 
         valid_idx = [i for i, rs in enumerate(robot_states) if rs is not None]
@@ -1368,7 +1397,7 @@ def run_subbatch_full_pipeline(
             gym.set_actor_dof_states(rs["env"], rs["actor"], ds, gymapi.STATE_ALL)
             try:
                 ox, oy = rs["offset"]
-                rb = gym.get_actor_rigid_body_states(rs["env"], rs["actor"], gymapi.STATE_ALL)
+                rb = np.copy(rs["initial_rb_states"])
                 rb["pose"]["p"][0]["x"] = float(ox)
                 rb["pose"]["p"][0]["y"] = float(oy)
                 rb["pose"]["p"][0]["z"] = BODY_HEIGHT
@@ -1376,12 +1405,12 @@ def run_subbatch_full_pipeline(
                 rb["pose"]["r"][0]["y"] = 0.0
                 rb["pose"]["r"][0]["z"] = 0.0
                 rb["pose"]["r"][0]["w"] = 1.0
-                rb["vel"]["linear"][0]["x"]  = 0.0
-                rb["vel"]["linear"][0]["y"]  = 0.0
-                rb["vel"]["linear"][0]["z"]  = 0.0
-                rb["vel"]["angular"][0]["x"] = 0.0
-                rb["vel"]["angular"][0]["y"] = 0.0
-                rb["vel"]["angular"][0]["z"] = 0.0
+                rb["vel"]["linear"]["x"].fill(0.0)
+                rb["vel"]["linear"]["y"].fill(0.0)
+                rb["vel"]["linear"]["z"].fill(0.0)
+                rb["vel"]["angular"]["x"].fill(0.0)
+                rb["vel"]["angular"]["y"].fill(0.0)
+                rb["vel"]["angular"]["z"].fill(0.0)
                 gym.set_actor_rigid_body_states(rs["env"], rs["actor"], rb, gymapi.STATE_ALL)
             except Exception:
                 pass
@@ -1405,6 +1434,20 @@ def run_subbatch_full_pipeline(
             rs["group_b"]   = topo["groups"]["group_b"]
             rs["group_c"]   = topo["groups"].get("group_c", [])
             rs["fwd_list"]  = fwd_arr.tolist()
+            cpg = plan.get("cpg", {})
+            rs["gait_mode"] = str(cpg.get("mode", "legacy_sine"))
+            rs["gait_frequency"] = float(cpg.get("frequency_hz", GAIT_FREQUENCY))
+            rs["duty_factor"] = float(np.clip(cpg.get("duty_factor", 0.5), 0.50, 0.92))
+            rs["phase_offsets"] = {
+                int(k): float(v) for k, v in cpg.get("phase_offsets", {}).items()
+            }
+            rs["base_amplitudes"] = dict(per_amp)
+            rs["yaw_integral"] = 0.0
+            rs["planned_yaw"] = float(plan.get("body_yaw_target", 0.0))
+            rs["yaw_levers"] = {
+                int(k): float(v)
+                for k, v in plan.get("yaw_balance", {}).get("yaw_levers", {}).items()
+            }
 
         def _run_episode(active_indices, plan_map, n_steps, track_yaw=True):
             """Run one episode for active robots.  plan_map[i] = gait_plan for robot i."""
@@ -1416,9 +1459,9 @@ def run_subbatch_full_pipeline(
                 robot_states[i]["td_ramp"]    = {}
             sim_t = 0.0
             for _step in range(n_steps):
-                ph_now = 2.0 * math.pi * GAIT_FREQUENCY * sim_t
                 for i in active_indices:
                     rs  = robot_states[i]
+                    ph_now = 2.0 * math.pi * rs["gait_frequency"] * sim_t
                     tgt = rs["stand_ev"].copy()
                     for lid, j in rs["triplets"].items():
                         if lid in rs["group_c"]:
@@ -1426,18 +1469,26 @@ def run_subbatch_full_pipeline(
                             tgt[j["drop_idx"]]  = _rtj(j["drop_lower"], j["drop_upper"], rs["_sd"])
                             tgt[j["swing_idx"]] = _rtj(j["swing_lower"], j["swing_upper"], 0.5)
                             continue
-                        if   lid in rs["group_b"]: lg_ph = ph_now + math.pi
-                        elif lid in rs["group_a"]: lg_ph = ph_now
-                        else:                      lg_ph = 0.0
-                        sw    = float(math.sin(lg_ph))
-                        alpha = _ss(-0.30, 0.30, sw)
+                        if lid in rs["phase_offsets"]:
+                            lg_ph = ph_now + rs["phase_offsets"][lid]
+                        elif lid in rs["group_b"]:
+                            lg_ph = ph_now + math.pi
+                        elif lid in rs["group_a"]:
+                            lg_ph = ph_now
+                        else:
+                            lg_ph = 0.0
+                        if rs["gait_mode"] in ("tripod", "alternating", "wave"):
+                            sw, alpha = _gait_wave(lg_ph, rs["duty_factor"])
+                        else:
+                            sw = float(math.sin(lg_ph))
+                            alpha = _ss(-0.30, 0.30, sw)
                         fv    = rs["fmap"].get(lid, np.zeros(2))
-                        dsign = -1.0 if float(np.dot(fv, rs["lat"])) > 0.0 else 1.0
+                        dsign = 1.0 if float(np.dot(fv, rs["lat"])) > 0.0 else -1.0
                         ea    = SWING_AMP * float(rs["per_amp"].get(str(lid), 1.0))
                         lr    = rs["_sl"] + (rs["_swl"] - rs["_sl"]) * alpha
                         dr    = rs["_sd"] + (rs["_swd"] - rs["_sd"]) * alpha
                         sr    = 0.5 + ea * dsign * sw
-                        if sw <= 0.0:
+                        if alpha <= 1e-6:
                             if lid in rs["td_ramp"]:
                                 rs["td_ramp"][lid] += 1
                                 rp = min(rs["td_ramp"][lid] / 8, 1.0)
@@ -1557,8 +1608,10 @@ def run_subbatch_full_pipeline(
                 needs_round2.append((i, plan_c, best_fwd[i], "yaw_corr"))
                 print(f"  → spinning s=0.55")
 
-        # Rounds 2-4: skip — probe_and_correct_plan already handles yaw + axis
-        for round_num in range(5, 5):  # empty, disabled
+        # Rounds 2-4 evaluate the queued alternate axes / yaw corrections in
+        # the same shared simulation.  The old empty range silently discarded
+        # every correction proposed above.
+        for round_num in range(2, 5):
             if not needs_round2:
                 break
             active_r     = [tup[0] for tup in needs_round2]
@@ -1630,18 +1683,21 @@ def run_subbatch_full_pipeline(
         plan_map_f = {i: best_plan[i] for i in valid_idx}
         for i in valid_idx:
             rs = robot_states[i]
+            _apply_plan_to_rs(rs, plan_map_f[i])
             rs["min_travel"] = rs["body_length"] * max(MIN_TRAVEL_BODY_LENGTHS, 0.0)
             rs["done"]       = False
+            rs["com_trail"]  = []
+            rs["td_ramp"]    = {}
             _reset_robot(rs)
 
         sim_t = 0.0
         for _step in range(full_steps):
-            ph_now = 2.0 * math.pi * GAIT_FREQUENCY * sim_t
             still_going = [i for i in valid_idx if not robot_states[i]["done"]]
             if not still_going:
                 break
             for i in still_going:
                 rs  = robot_states[i]
+                ph_now = 2.0 * math.pi * rs["gait_frequency"] * sim_t
                 tgt = rs["stand_ev"].copy()
                 for lid, j in rs["triplets"].items():
                     if lid in rs["group_c"]:
@@ -1649,18 +1705,26 @@ def run_subbatch_full_pipeline(
                         tgt[j["drop_idx"]]  = _rtj(j["drop_lower"], j["drop_upper"], rs["_sd"])
                         tgt[j["swing_idx"]] = _rtj(j["swing_lower"], j["swing_upper"], 0.5)
                         continue
-                    if   lid in rs["group_b"]: lg_ph = ph_now + math.pi
-                    elif lid in rs["group_a"]: lg_ph = ph_now
-                    else:                      lg_ph = 0.0
-                    sw    = float(math.sin(lg_ph))
-                    alpha = _ss(-0.30, 0.30, sw)
+                    if lid in rs["phase_offsets"]:
+                        lg_ph = ph_now + rs["phase_offsets"][lid]
+                    elif lid in rs["group_b"]:
+                        lg_ph = ph_now + math.pi
+                    elif lid in rs["group_a"]:
+                        lg_ph = ph_now
+                    else:
+                        lg_ph = 0.0
+                    if rs["gait_mode"] in ("tripod", "alternating", "wave"):
+                        sw, alpha = _gait_wave(lg_ph, rs["duty_factor"])
+                    else:
+                        sw = float(math.sin(lg_ph))
+                        alpha = _ss(-0.30, 0.30, sw)
                     fv    = rs["fmap"].get(lid, np.zeros(2))
-                    dsign = -1.0 if float(np.dot(fv, rs["lat"])) > 0.0 else 1.0
+                    dsign = 1.0 if float(np.dot(fv, rs["lat"])) > 0.0 else -1.0
                     ea    = SWING_AMP * float(rs["per_amp"].get(str(lid), 1.0))
                     lr    = rs["_sl"] + (rs["_swl"] - rs["_sl"]) * alpha
                     dr    = rs["_sd"] + (rs["_swd"] - rs["_sd"]) * alpha
                     sr    = 0.5 + ea * dsign * sw
-                    if sw <= 0.0:
+                    if alpha <= 1e-6:
                         if lid in rs["td_ramp"]:
                             rs["td_ramp"][lid] += 1
                             rp = min(rs["td_ramp"][lid] / 8, 1.0)
@@ -1686,11 +1750,59 @@ def run_subbatch_full_pipeline(
                 sts = gym.get_actor_rigid_body_states(rs["env"], rs["actor"], gymapi.STATE_POS)
                 if sts is not None and len(sts) > 0:
                     p   = sts["pose"]["p"][0]
+                    q   = sts["pose"]["r"][0]
                     ox, oy = rs["offset"]
-                    rs["com_trail"].append([float(p["x"]) - ox, float(p["y"]) - oy])
+                    siny = 2.0 * (float(q["w"]) * float(q["z"])
+                                  + float(q["x"]) * float(q["y"]))
+                    cosy = 1.0 - 2.0 * (float(q["y"]) ** 2 + float(q["z"]) ** 2)
+                    yaw = float(math.atan2(siny, cosy))
+                    rs["com_trail"].append([
+                        float(p["x"]) - ox, float(p["y"]) - oy,
+                        yaw, float(p["z"]),
+                    ])
+                    if (_step + 1) % 60 == 0:
+                        yaw_err = float(np.arctan2(
+                            np.sin(yaw - rs["planned_yaw"]),
+                            np.cos(yaw - rs["planned_yaw"]),
+                        ))
+                        trail_now = rs["com_trail"]
+                        p0 = np.asarray(trail_now[0][:2], dtype=float)
+                        pn = np.asarray(trail_now[-1][:2], dtype=float)
+                        lateral_error = float(np.dot(pn - p0, rs["lat"]))
+                        lateral_velocity = 0.0
+                        if len(trail_now) >= 61:
+                            pp = np.asarray(trail_now[-61][:2], dtype=float)
+                            lateral_velocity = float(np.dot(pn - pp, rs["lat"]))
+                        desired_offset = float(np.clip(
+                            -2.0 * lateral_error - 0.8 * lateral_velocity,
+                            -0.40, 0.40,
+                        ))
+                        control_err = yaw_err - desired_offset
+                        if abs(control_err) > 0.0087 and rs["yaw_levers"]:
+                            rs["yaw_integral"] = float(np.clip(
+                                rs["yaw_integral"] + 0.02 * control_err, -0.5, 0.5
+                            ))
+                            yaw_signal = float(np.clip(
+                                control_err / 0.3 + 0.3 * rs["yaw_integral"] / 0.3,
+                                -1.0, 1.0,
+                            ))
+                            max_lever = max(abs(v) for v in rs["yaw_levers"].values())
+                            if max_lever > 1e-9:
+                                rs["per_amp"] = {
+                                    lid: float(np.clip(
+                                        amp * np.clip(
+                                            1.0 - yaw_signal
+                                            * rs["yaw_levers"].get(int(lid), 0.0)
+                                            / max_lever,
+                                            0.40, 1.60,
+                                        ),
+                                        0.15, 0.85,
+                                    ))
+                                    for lid, amp in rs["base_amplitudes"].items()
+                                }
                 if _step >= SIM_STEPS and len(rs["com_trail"]) > 1 and rs["min_travel"] > 0:
                     arr     = np.array(rs["com_trail"], dtype=float)
-                    covered = abs(float(np.dot(arr[-1] - arr[0], rs["fwd"])))
+                    covered = abs(float(np.dot(arr[-1, :2] - arr[0, :2], rs["fwd"])))
                     if covered >= rs["min_travel"]:
                         rs["done"] = True
             sim_t += _dt
@@ -1991,7 +2103,7 @@ def run_gait_sim_parallel_final(
                     sw    = float(math.sin(lg_ph))
                     alpha = _ss(-0.30, 0.30, sw)
                     fv    = rs["fmap"].get(lid, np.zeros(2))
-                    dsign = -1.0 if float(np.dot(fv, lat)) > 0.0 else 1.0
+                    dsign = 1.0 if float(np.dot(fv, lat)) > 0.0 else -1.0
                     eff_amp = SWING_AMP * float(per_amp.get(str(lid), 1.0))
 
                     lr = _sl  + (_swl - _sl) * alpha
@@ -2081,6 +2193,7 @@ def plot_demo(
     fwd_dist: float,
     lat_dist: float,
     out_path: Path,
+    metrics: Optional[dict] = None,
 ) -> None:
     import tempfile
     data = {
@@ -2091,6 +2204,7 @@ def plot_demo(
         "forward_axis": forward_axis,
         "fwd_dist":    fwd_dist,
         "lat_dist":    lat_dist,
+        "metrics":     metrics or {},
         "out_path":    str(out_path),
     }
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -2109,6 +2223,30 @@ def plot_demo(
         Path(tmp_path).unlink(missing_ok=True)
 
 
+def save_trajectory_data(
+    out_path: Path,
+    com_trail: List[List[float]],
+    forward_axis: List[float],
+    metrics: dict,
+    max_saved_samples: int = 1500,
+) -> None:
+    """Save auditable, bounded-size trajectory data alongside each PNG."""
+    stride = max(1, int(math.ceil(len(com_trail) / max(max_saved_samples, 1))))
+    sampled = com_trail[::stride]
+    if com_trail and sampled[-1] != com_trail[-1]:
+        sampled = [*sampled, com_trail[-1]]
+    payload = {
+        "coordinate_frame": "world_xy; projected by forward_axis in the PNG",
+        "sample_rate_hz": 60.0 / stride,
+        "original_sample_count": len(com_trail),
+        "saved_stride": stride,
+        "forward_axis": list(forward_axis),
+        "metrics": metrics,
+        "samples": sampled,
+    }
+    out_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+
 # ---------------------------------------------------------------------------
 # Batch Analysis Report
 # ---------------------------------------------------------------------------
@@ -2119,21 +2257,14 @@ def generate_batch_report(out_root: Path, summary_rows: List[dict]) -> Path:
     ok_rows = [r for r in summary_rows if r.get("status") == "ok"]
     fail_rows = [r for r in summary_rows if r.get("status") != "ok"]
 
-    # ── Categorise ok robots ─────────────────────────────────────────────────
-    good, stuck, circular, backward = [], [], [], []
+    # ``status=ok`` only means the simulation produced samples.  Locomotion
+    # success is exclusively the shared trajectory evaluator's decision.
+    good, rejected = [], []
     for r in ok_rows:
-        fwd = r.get("fwd_dist", 0.0)
-        lat = r.get("lat_dist", 0.0)
-        abs_fwd = abs(fwd)
-        ratio = abs(lat) / max(abs_fwd, 0.01)
-        if fwd < -0.10:
-            backward.append(r)
-        elif abs_fwd < 0.15:
-            stuck.append(r)
-        elif ratio > 1.8:
-            circular.append(r)
-        else:
+        if r.get("locomotion_passed", False):
             good.append(r)
+        else:
+            rejected.append(r)
 
     total = len(summary_rows)
     n_ok  = len(ok_rows)
@@ -2152,7 +2283,8 @@ def generate_batch_report(out_root: Path, summary_rows: List[dict]) -> Path:
         f"**Run directory**: `{out_root}`  ",
         f"**Date**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  ",
         f"**Config**: {NUM_ROBOTS} robots, seeds={SEEDS[:5]}{'…' if len(SEEDS)>5 else ''}  ",
-        f"**GPU**: {USE_GPU}, batch_size={GPU_BATCH_SIZE}",
+        f"**GPU**: {USE_GPU}, execution_mode={EXECUTION_MODE}, "
+        f"batch_size={GPU_BATCH_SIZE if EXECUTION_MODE == 'parallel' else ISOLATED_CHUNK_SIZE}",
         f"**EKF Online**: {'enabled' if USE_ONLINE_EKF else 'disabled'} (drift threshold={EKF_DRIFT_THRESHOLD})",
         f"",
         f"---",
@@ -2163,11 +2295,9 @@ def generate_batch_report(out_root: Path, summary_rows: List[dict]) -> Path:
         f"|---|---:|---:|",
         f"| Total robots | {total} | 100% |",
         f"| Simulation OK | {n_ok} | {100*n_ok//max(total,1)}% |",
-        f"| **Good (straight forward)** | {len(good)} | {100*len(good)//max(total,1)}% |",
-        f"| Circular motion | {len(circular)} | {100*len(circular)//max(total,1)}% |",
-        f"| Stuck / barely moving | {len(stuck)} | {100*len(stuck)//max(total,1)}% |",
-        f"| Backward motion | {len(backward)} | {100*len(backward)//max(total,1)}% |",
-        f"| Failed (gen/sim error) | {len(fail_rows)} | {100*len(fail_rows)//max(total,1)}% |",
+        f"| **Locomotion PASS** | {len(good)} | {100*len(good)//max(total,1)}% |",
+        f"| Locomotion rejected | {len(rejected)} | {100*len(rejected)//max(total,1)}% |",
+        f"| Static skipped / failed | {len(fail_rows)} | {100*len(fail_rows)//max(total,1)}% |",
         f"",
         f"## 2. Motion Statistics (OK robots only)",
         f"",
@@ -2193,17 +2323,11 @@ def generate_batch_report(out_root: Path, summary_rows: List[dict]) -> Path:
         f"",
         f"## 3. Robot Categories",
         f"",
-        f"**✓ Good (forward, low yaw)**:  ",
+        f"**✓ Locomotion PASS**:  ",
         f"{_fmt_list(good)}",
         f"",
-        f"**↺ Circular motion** (|lat|/|fwd| > 1.8):  ",
-        f"{_fmt_list(circular)}",
-        f"",
-        f"**✗ Stuck** (|fwd| < 0.15 m):  ",
-        f"{_fmt_list(stuck)}",
-        f"",
-        f"**← Backward** (fwd < −0.10 m):  ",
-        f"{_fmt_list(backward)}",
+        f"**✗ Locomotion rejected by shared criteria**:  ",
+        f"{_fmt_list(rejected)}",
         f"",
         f"**⚠ Failed**:  ",
         f"{_fmt_list(fail_rows)}",
@@ -2217,11 +2341,7 @@ def generate_batch_report(out_root: Path, summary_rows: List[dict]) -> Path:
         if r.get("status") == "ok":
             fwd = r.get("fwd_dist", 0.0)
             lat = r.get("lat_dist", 0.0)
-            ratio = abs(lat) / max(abs(fwd), 0.01)
-            if fwd < -0.10:                cat = "← backward"
-            elif abs(fwd) < 0.15:          cat = "✗ stuck"
-            elif ratio > 1.8:              cat = "↺ circular"
-            else:                          cat = "✓ good"
+            cat = "✓ PASS" if r.get("locomotion_passed", False) else "✗ rejected"
         else:
             fwd = lat = float("nan")
             cat = f"⚠ {r.get('status', '?')}"
@@ -2240,38 +2360,18 @@ def generate_batch_report(out_root: Path, summary_rows: List[dict]) -> Path:
         f"",
     ]
 
-    # Auto-generated diagnosis
-    if len(circular) > len(good):
-        lines += [
-            f"**[高偏航率]** {len(circular)}/{n_ok} 个机器人发生圆弧运动，",
-            f"说明步态偏航补偿仍不充分。建议：",
-            f"- 增大 `YAW_COMP_GAIN`（adaptation.gait.py）至 0.70+",
-            f"- 检查 `yaw_levers` 是否过小（对称机器人应接近 0）",
-            f"- 考虑增加偏航修正迭代次数 `MAX_YAW_ITERS`",
-            f"",
-        ]
-    if len(stuck) > 0.2 * n_ok:
-        lines += [
-            f"**[卡死/无法移动]** {len(stuck)}/{n_ok} 个机器人无明显前进，",
-            f"可能原因：",
-            f"- 形态极端不对称导致方向选择失败",
-            f"- SSM 过低导致站立不稳",
-            f"- 步态频率/幅度不匹配该形态关节范围",
-            f"建议：降低 `SWING_AMP`，增加 `PROBE_STEPS`",
-            f"",
-        ]
-    if len(backward) > 0:
-        lines += [
-            f"**[后退]** {len(backward)} 个机器人向后运动，",
-            f"说明前进方向判断出错（swing vector 方向与实际相反）。",
-            f"建议：检查 `_build_default_swing_vector` 中的 outward 方向约定",
-            f"",
-        ]
-    if not (len(circular) > len(good) or len(stuck) > 0.2 * n_ok or backward):
-        lines += [
-            f"整体表现良好。好的机器人比例：{len(good)}/{n_ok}。",
-            f"",
-        ]
+    failed_checks = {}
+    for row in rejected:
+        for check, passed in row.get("metrics", {}).get("checks", {}).items():
+            if not passed:
+                failed_checks[check] = failed_checks.get(check, 0) + 1
+    lines += [
+        f"统一轨迹标准通过：{len(good)}/{n_ok}。",
+        "失败指标统计：" + (", ".join(
+            f"{name}={count}" for name, count in sorted(failed_checks.items())
+        ) if failed_checks else "—"),
+        "",
+    ]
 
     fwd_mean = sum(fwd_vals) / len(fwd_vals) if fwd_vals else 0
     lat_mean = sum(lat_vals) / len(lat_vals) if lat_vals else 0
@@ -2281,7 +2381,7 @@ def generate_batch_report(out_root: Path, summary_rows: List[dict]) -> Path:
     ekf_count = sum(1 for r in ok_rows if r.get("strategy") == "ekf_online")
     lines += [
         f"**平均前进距离**: {fwd_mean:+.3f} m，**平均偏移**: {lat_mean:.3f} m",
-        f"**平均漂移比**: {drift_mean:.3f}（越小越直；< 0.3 视为良好）",
+        f"**平均漂移比**: {drift_mean:.3f}（越小越直；统一阈值 ≤ 0.25）",
         f"**EKF在线修正**: {ekf_count}/{len(ok_rows)} 机器人触发 ({ekf_count/max(len(ok_rows),1)*100:.1f}%)",
         f"",
         f"---",
@@ -2313,18 +2413,10 @@ def generate_html_report(out_root: Path, summary_rows: List[dict]) -> Path:
     def _cat(r: dict) -> str:
         if r.get("status") != "ok":
             return "failed"
-        fwd = r.get("fwd_dist", 0.0)
-        lat = r.get("lat_dist", 0.0)
-        ratio = abs(lat) / max(abs(fwd), 0.01)
-        if fwd < -0.10:         return "backward"
-        if abs(fwd) < 0.15:     return "stuck"
-        if ratio > 1.8:         return "circular"
-        return "good"
+        return "good" if r.get("locomotion_passed", False) else "rejected"
 
-    cat_label  = {"good": "✓ Good", "circular": "↺ Circular",
-                  "stuck": "✗ Stuck", "backward": "← Backward", "failed": "⚠ Failed"}
-    cat_color  = {"good": "#d4edda", "circular": "#fff3cd",
-                  "stuck": "#f8d7da", "backward": "#f8d7da", "failed": "#e2e3e5"}
+    cat_label  = {"good": "✓ PASS", "rejected": "✗ Rejected", "failed": "⚠ Failed"}
+    cat_color  = {"good": "#d4edda", "rejected": "#fff3cd", "failed": "#e2e3e5"}
     cat_counts = {k: 0 for k in cat_label}
     for r in summary_rows:
         cat_counts[_cat(r)] += 1
@@ -2419,6 +2511,7 @@ def generate_html_report(out_root: Path, summary_rows: List[dict]) -> Path:
   .card .num {{ font-size: 2rem; font-weight: 700; line-height: 1; }}
   .card .lbl {{ font-size: 0.78rem; color: #555; margin-top: 4px; }}
   .c-good     {{ background:#d4edda; }}
+  .c-rejected {{ background:#fff3cd; }}
   .c-circular {{ background:#fff3cd; }}
   .c-stuck    {{ background:#f8d7da; }}
   .c-backward {{ background:#f8d7da; }}
@@ -2473,19 +2566,13 @@ def generate_html_report(out_root: Path, summary_rows: List[dict]) -> Path:
     <div class="num">{n_ok}</div><div class="lbl">Sim OK ({_pct(n_ok)})</div>
   </div>
   <div class="card c-good">
-    <div class="num">{cat_counts['good']}</div><div class="lbl">Good ({_pct(cat_counts['good'])})</div>
+    <div class="num">{cat_counts['good']}</div><div class="lbl">PASS ({_pct(cat_counts['good'])})</div>
   </div>
-  <div class="card c-circular">
-    <div class="num">{cat_counts['circular']}</div><div class="lbl">Circular</div>
-  </div>
-  <div class="card c-stuck">
-    <div class="num">{cat_counts['stuck']}</div><div class="lbl">Stuck</div>
-  </div>
-  <div class="card c-backward">
-    <div class="num">{cat_counts['backward']}</div><div class="lbl">Backward</div>
+  <div class="card c-rejected">
+    <div class="num">{cat_counts['rejected']}</div><div class="lbl">Rejected</div>
   </div>
   <div class="card c-failed">
-    <div class="num">{cat_counts['failed']}</div><div class="lbl">Failed</div>
+    <div class="num">{cat_counts['failed']}</div><div class="lbl">Skipped / Failed</div>
   </div>
 </div>
 
@@ -2513,10 +2600,8 @@ def generate_html_report(out_root: Path, summary_rows: List[dict]) -> Path:
 <h2>3. Per-Robot Details</h2>
 <div class="filter-bar" id="filter-bar">
   <button class="filter-btn active c-ok" data-cat="all" onclick="filterCat(this,'all')">All ({total})</button>
-  <button class="filter-btn c-good" data-cat="good" onclick="filterCat(this,'good')">✓ Good ({cat_counts['good']})</button>
-  <button class="filter-btn c-circular" data-cat="circular" onclick="filterCat(this,'circular')">↺ Circular ({cat_counts['circular']})</button>
-  <button class="filter-btn c-stuck" data-cat="stuck" onclick="filterCat(this,'stuck')">✗ Stuck ({cat_counts['stuck']})</button>
-  <button class="filter-btn c-backward" data-cat="backward" onclick="filterCat(this,'backward')">← Backward ({cat_counts['backward']})</button>
+  <button class="filter-btn c-good" data-cat="good" onclick="filterCat(this,'good')">✓ PASS ({cat_counts['good']})</button>
+  <button class="filter-btn c-rejected" data-cat="rejected" onclick="filterCat(this,'rejected')">✗ Rejected ({cat_counts['rejected']})</button>
   <button class="filter-btn c-failed" data-cat="failed" onclick="filterCat(this,'failed')">⚠ Failed ({cat_counts['failed']})</button>
 </div>
 <table id="robot-table">
@@ -2745,7 +2830,7 @@ def run_ekf_online_simulation(
                 sw_val = float(math.sin(lg_ph))
                 alpha = _ss(-0.30, 0.30, sw_val)
                 fv = ctx.fmap.get(lid, np.zeros(2))
-                dsign = -1.0 if float(np.dot(fv, lat)) > 0.0 else 1.0
+                dsign = 1.0 if float(np.dot(fv, lat)) > 0.0 else -1.0
 
                 base_scale = float(base_amps.get(str(lid), 1.0))
                 online_scale = float(online_scales.get(str(lid), 1.0))
@@ -2818,20 +2903,148 @@ def run_ekf_online_simulation(
 # ---------------------------------------------------------------------------
 # Main batch loop
 # ---------------------------------------------------------------------------
+# Robust isolated sequential chunks for large runs
+# ---------------------------------------------------------------------------
+
+def _robust_chunk_worker(robot_infos: List[dict], result_file: str, run_config: dict) -> None:
+    """Simulate a small group sequentially and checkpoint after every robot."""
+    global SIM_STEPS, MAX_SIM_STEPS, MIN_TRAVEL_BODY_LENGTHS, USE_GPU
+    import pickle as _pkl
+
+    SIM_STEPS = int(run_config["sim_steps"])
+    MAX_SIM_STEPS = int(run_config["max_sim_steps"])
+    MIN_TRAVEL_BODY_LENGTHS = float(run_config["min_travel_body_lengths"])
+    USE_GPU = bool(run_config["use_gpu"])
+
+    completed = []
+    for local_idx, info in enumerate(robot_infos):
+        try:
+            trail, axis = optimize_and_simulate(info["description"], info["urdf_path"])
+            completed.append({"index": local_idx, "trail": trail, "axis": axis, "error": None})
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            completed.append({
+                "index": local_idx,
+                "trail": [],
+                "axis": info["initial_plan"].get("final_forward_axis", [1.0, 0.0]),
+                "error": repr(exc),
+            })
+        # If CUDA teardown later kills this worker, prior robot results remain.
+        with open(result_file, "wb") as handle:
+            _pkl.dump(completed, handle)
+
+
+def run_robust_chunk_isolated(robot_infos: List[dict]) -> List[Tuple[list, list, Optional[str]]]:
+    """Run at most a few single-robot sims in a disposable spawned process."""
+    import multiprocessing as mp
+    import pickle
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(suffix="_robust_batch.pkl", delete=False) as handle:
+        result_file = handle.name
+    saved_pythonpath = os.environ.get("PYTHONPATH", "")
+    os.environ["PYTHONPATH"] = (
+        f"{REPO_ROOT}:{saved_pythonpath}" if saved_pythonpath else str(REPO_ROOT)
+    )
+    try:
+        process = mp.get_context("spawn").Process(
+            target=_robust_chunk_worker,
+            args=(robot_infos, result_file, {
+                "sim_steps": SIM_STEPS,
+                "max_sim_steps": MAX_SIM_STEPS,
+                "min_travel_body_lengths": MIN_TRAVEL_BODY_LENGTHS,
+                "use_gpu": USE_GPU,
+            }),
+        )
+        process.start()
+    finally:
+        if saved_pythonpath:
+            os.environ["PYTHONPATH"] = saved_pythonpath
+        else:
+            os.environ.pop("PYTHONPATH", None)
+
+    process.join(timeout=7200)
+    if process.is_alive():
+        process.terminate()
+        process.join(30)
+
+    completed = []
+    try:
+        if os.path.getsize(result_file) > 0:
+            with open(result_file, "rb") as handle:
+                completed = pickle.load(handle)
+    except (OSError, EOFError, pickle.UnpicklingError):
+        completed = []
+    finally:
+        try:
+            os.unlink(result_file)
+        except OSError:
+            pass
+
+    by_index = {int(item["index"]): item for item in completed}
+    results = []
+    for idx, info in enumerate(robot_infos):
+        item = by_index.get(idx)
+        if item is None:
+            results.append((
+                [], info["initial_plan"].get("final_forward_axis", [1.0, 0.0]),
+                f"worker exited {process.exitcode} before checkpoint",
+            ))
+        else:
+            results.append((item["trail"], item["axis"], item["error"]))
+    return results
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--num-robots", type=int, default=NUM_ROBOTS)
+    parser.add_argument("--seed-base", type=int, default=20260818,
+                        help="补充随机种子的确定性随机源。")
+    parser.add_argument("--sim-steps", type=int, default=SIM_STEPS)
+    parser.add_argument("--max-sim-steps", type=int, default=MAX_SIM_STEPS)
+    parser.add_argument("--min-travel-body-lengths", type=float,
+                        default=MIN_TRAVEL_BODY_LENGTHS)
+    parser.add_argument("--isolated-chunk-size", type=int, default=ISOLATED_CHUNK_SIZE)
+    parser.add_argument("--execution-mode", choices=("parallel", "isolated"),
+                        default="parallel",
+                        help="parallel=共享GPU仿真；isolated=逐台高保真仿真。")
+    parser.add_argument("--resume-dir", type=Path,
+                        help="复用已有批次中的机器人资产，跳过500台重新生成。")
+    parser.add_argument("--output-dir", default=OUTPUT_DIR)
+    parser.add_argument("--skip-standard", action="store_true")
+    return parser.parse_args()
+
 
 def main() -> None:
+    global NUM_ROBOTS, SIM_STEPS, MAX_SIM_STEPS, MIN_TRAVEL_BODY_LENGTHS
+    global ISOLATED_CHUNK_SIZE, OUTPUT_DIR, INCLUDE_STANDARD_HEXAPOD, EXECUTION_MODE
+    args = parse_args()
+    NUM_ROBOTS = max(0, args.num_robots)
+    SIM_STEPS = max(60, args.sim_steps)
+    MAX_SIM_STEPS = max(SIM_STEPS, args.max_sim_steps)
+    MIN_TRAVEL_BODY_LENGTHS = max(0.0, args.min_travel_body_lengths)
+    ISOLATED_CHUNK_SIZE = max(1, args.isolated_chunk_size)
+    OUTPUT_DIR = args.output_dir
+    INCLUDE_STANDARD_HEXAPOD = not args.skip_standard
+    EXECUTION_MODE = args.execution_mode
+
     if not _GYM_AVAILABLE:
         print("[ERROR] Isaac Gym not available. Check environment.")
         sys.exit(1)
 
     # Ensure seed list is long enough
-    seeds = list(SEEDS)
+    seeds = list(dict.fromkeys(SEEDS))
+    seed_rng = random.Random(args.seed_base)
     while len(seeds) < NUM_ROBOTS:
-        seeds.append(random.randint(1, 999999))
+        candidate = seed_rng.randint(1, 999999)
+        if candidate not in seeds:
+            seeds.append(candidate)
     seeds = seeds[:NUM_ROBOTS]
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_root = REPO_ROOT / OUTPUT_DIR / timestamp
+    out_root = (args.resume_dir.resolve() if args.resume_dir else
+                REPO_ROOT / OUTPUT_DIR / timestamp)
     out_root.mkdir(parents=True, exist_ok=True)
     # Create per-batch png/ folder immediately — plots are synced in real-time
     png_dir = out_root / "png"
@@ -2875,10 +3088,14 @@ def main() -> None:
             disp  = trail[-1, :2] - trail[0, :2] if len(trail) > 1 else np.zeros(2)
             fwd_dist = float(np.dot(disp, fwd))
             lat_dist = float(np.dot(disp, lat))
+            metrics = evaluate_trajectory(com_trail, forward_axis,
+                                          gait_frequency_hz=GAIT_FREQUENCY)
             print(f"  [Sim]  steps={len(com_trail)}  fwd={fwd_dist:+.3f}m  lat={lat_dist:+.3f}m")
             out_img = robot_dir / "trajectory.png"
             plot_demo(robot_name, description, ssm_result, com_trail, forward_axis,
-                      fwd_dist, lat_dist, out_img)
+                      fwd_dist, lat_dist, out_img, metrics)
+            save_trajectory_data(robot_dir / "trajectory.json", com_trail,
+                                 forward_axis, metrics)
             if out_img.exists():
                 all_png_paths.append(out_img)
                 shutil.copy2(out_img, png_dir / (robot_name + ".png"))
@@ -2886,6 +3103,8 @@ def main() -> None:
                 "robot": robot_name, "status": "ok",
                 "ssm": ssm_result["ssm"], "num_legs": description.get("num_legs"),
                 "fwd_dist": fwd_dist, "lat_dist": lat_dist,
+                "locomotion_passed": metrics["passed"],
+                "metrics": metrics,
             })
         except Exception as e:
             print(f"  [Ref]  FAILED: {e}")
@@ -2902,9 +3121,15 @@ def main() -> None:
 
         # ── Step 1: generate ──
         try:
-            desc_path, urdf_path = generate_robot(seed, robot_dir)
+            if args.resume_dir:
+                desc_path = robot_dir / "robot_description.json"
+                urdf_path = robot_dir / "robot.urdf"
+                if not desc_path.exists() or not urdf_path.exists():
+                    raise FileNotFoundError(f"resume asset missing in {robot_dir}")
+            else:
+                desc_path, urdf_path = generate_robot(seed, robot_dir)
             description = json.loads(desc_path.read_text(encoding="utf-8"))
-            print(f"  [Gen]  legs={description.get('num_legs')}  "
+            print(f"  [{'Load' if args.resume_dir else 'Gen'}]  legs={description.get('num_legs')}  "
                   f"desc={desc_path.name}  urdf={urdf_path.name}")
         except Exception as e:
             print(f"  [Gen]  FAILED: {e}")
@@ -2917,7 +3142,12 @@ def main() -> None:
 
         if SKIP_UNSTABLE and not ssm_result["passed"]:
             print(f"  [Skip] SSM below threshold, skipping gait test.")
-            summary_rows.append({"robot": robot_name, "status": "unstable", "ssm": ssm_result["ssm"]})
+            summary_rows.append({
+                "robot": robot_name, "status": "unstable",
+                "ssm": ssm_result["ssm"],
+                "num_legs": description.get("num_legs"),
+                "locomotion_passed": False,
+            })
             out_img = robot_dir / "trajectory.png"
             plot_demo(robot_name, description, ssm_result, [], [1.0, 0.0], 0.0, 0.0, out_img)
             if out_img.exists():
@@ -2943,35 +3173,50 @@ def main() -> None:
             "robot_dir":    robot_dir,
         })
 
-    # ── Sequential pipeline: one robot at a time, probe + full-sim ───────
+    # ── Robust pipeline: small sequential groups in disposable processes ──
     if pending_probe:
         print(f"\n{'='*60}")
-        print(f"[Batch] Sequential: {len(pending_probe)} robots, GPU={USE_GPU}")
+        print(f"[Batch] mode={args.execution_mode}: {len(pending_probe)} robots, "
+              f"GPU={USE_GPU}, batch_size="
+              f"{GPU_BATCH_SIZE if args.execution_mode == 'parallel' else ISOLATED_CHUNK_SIZE}")
 
         probe_all = [None] * len(pending_probe)
         sim_all   = [None] * len(pending_probe)
 
-        for idx, info in enumerate(pending_probe):
-            robot_name  = info["robot_name"]
-            n_legs      = int(info["description"].get("num_legs", 0))
-            print(f"\n[{idx+1}/{len(pending_probe)}] {robot_name} "
-                  f"({n_legs} legs)", flush=True)
-
-            try:
-                trail, fwd_axis = optimize_and_simulate(
-                    info["description"], info["urdf_path"])
-                probe_all[idx] = (info["initial_plan"],
-                                  info["initial_plan"]["final_forward_axis"])
-                sim_all[idx]   = (trail, fwd_axis)
-                print(f"  [Sim] steps={len(trail)}", flush=True)
-                # Allow GPU to fully release between contexts
-                time.sleep(3.0)
-            except Exception as e:
-                print(f"  [FAIL] {e}", flush=True)
-                import traceback; traceback.print_exc()
-                probe_all[idx] = (info["initial_plan"],
-                                  info["initial_plan"]["final_forward_axis"])
-                sim_all[idx]   = ([], info["initial_plan"]["final_forward_axis"])
+        if args.execution_mode == "parallel":
+            for chunk_start in range(0, len(pending_probe), GPU_BATCH_SIZE):
+                chunk = pending_probe[chunk_start:chunk_start + GPU_BATCH_SIZE]
+                chunk_end = chunk_start + len(chunk)
+                print(f"\n[GPU Batch] robots {chunk_start + 1}-{chunk_end}/"
+                      f"{len(pending_probe)}", flush=True)
+                probe_chunk, sim_chunk = run_subbatch_isolated(chunk, use_gpu=USE_GPU)
+                for local_idx, (probe_result, sim_result) in enumerate(
+                    zip(probe_chunk, sim_chunk)
+                ):
+                    idx = chunk_start + local_idx
+                    probe_all[idx] = probe_result
+                    sim_all[idx] = sim_result
+                    print(f"  [Done] {pending_probe[idx]['robot_name']}: "
+                          f"{len(sim_result[0])} steps", flush=True)
+        else:
+            for chunk_start in range(0, len(pending_probe), ISOLATED_CHUNK_SIZE):
+                chunk = pending_probe[chunk_start:chunk_start + ISOLATED_CHUNK_SIZE]
+                chunk_end = chunk_start + len(chunk)
+                print(f"\n[Chunk] robots {chunk_start + 1}-{chunk_end}/"
+                      f"{len(pending_probe)}", flush=True)
+                chunk_results = run_robust_chunk_isolated(chunk)
+                for local_idx, (trail, fwd_axis, error) in enumerate(chunk_results):
+                    idx = chunk_start + local_idx
+                    info = pending_probe[idx]
+                    probe_all[idx] = (
+                        info["initial_plan"], info["initial_plan"]["final_forward_axis"]
+                    )
+                    sim_all[idx] = (trail, fwd_axis)
+                    if error:
+                        info["simulation_error"] = error
+                        print(f"  [FAIL] {info['robot_name']}: {error}", flush=True)
+                    else:
+                        print(f"  [Done] {info['robot_name']}: {len(trail)} steps", flush=True)
 
         # ── Process all results ────────────────────────────────────────────
         for pending_idx, info in enumerate(pending_probe):
@@ -2990,6 +3235,8 @@ def main() -> None:
             fwd_dist = float(np.dot(disp, fwd))
             lat_dist = float(np.dot(disp, lat))
             drift_ratio = abs(lat_dist) / max(abs(fwd_dist), 0.01)
+            metrics = evaluate_trajectory(com_trail, forward_axis,
+                                          gait_frequency_hz=GAIT_FREQUENCY)
             strategy = "baseline"
             print(f"  [Sim]  {robot_name}  steps={len(com_trail)}"
                   f"  fwd={fwd_dist:+.3f}m  lat={lat_dist:+.3f}m  "
@@ -3006,20 +3253,25 @@ def main() -> None:
 
             out_img = robot_dir / "trajectory.png"
             plot_demo(robot_name, description, ssm_result, com_trail, forward_axis,
-                      fwd_dist, lat_dist, out_img)
+                      fwd_dist, lat_dist, out_img, metrics)
+            save_trajectory_data(robot_dir / "trajectory.json", com_trail,
+                                 forward_axis, metrics)
             if out_img.exists():
                 all_png_paths.append(out_img)
                 shutil.copy2(out_img, png_dir / (robot_name + ".png"))
 
             summary_rows.append({
                 "robot":    robot_name,
-                "status":   "ok",
+                "status":   "ok" if len(com_trail) >= 3 else "sim_failed",
                 "ssm":      ssm_result["ssm"],
                 "num_legs": description.get("num_legs"),
                 "fwd_dist": fwd_dist,
                 "lat_dist": lat_dist,
                 "drift_ratio": round(drift_ratio, 3),
                 "strategy": strategy,
+                "locomotion_passed": metrics["passed"],
+                "metrics": metrics,
+                "simulation_error": info.get("simulation_error"),
             })
 
         # ── Batched EKF online correction (isolated in one subprocess) ────

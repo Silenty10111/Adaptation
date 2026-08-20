@@ -1,0 +1,125 @@
+[
+  {
+    "robot": "standard_hexapod",
+    "num_legs": 6,
+    "ssm": 0.5800362200879557,
+    "passed": true,
+    "selected_plan": "axis_0_alternating",
+    "final_axis": [
+      1.0,
+      -6.152263534986882e-15
+    ],
+    "metrics": {
+      "passed": true,
+      "reason": "accepted",
+      "checks": {
+        "forward_speed": true,
+        "lateral_speed": true,
+        "drift_ratio": true,
+        "heading_error": true,
+        "speed_cv": true,
+        "height_std": true,
+        "mean_height": true
+      },
+      "criteria": {
+        "min_forward_speed": 0.02,
+        "max_lateral_speed": 0.02,
+        "max_drift_ratio": 0.25,
+        "max_heading_error_deg": 12.0,
+        "max_speed_cv": 0.35,
+        "max_height_std": 0.035,
+        "min_mean_height": 0.2
+      },
+      "forward_speed": 0.21203865597220728,
+      "lateral_speed": 0.003960787671171773,
+      "drift_ratio": 0.018679554692569492,
+      "heading_error_deg": 1.0701351927340093,
+      "body_heading_error_deg": 4.938701062892037,
+      "yaw_std_deg": 5.001993467276902,
+      "speed_mean_abs": 0.21418505428193152,
+      "speed_std": 0.014077520944285164,
+      "speed_cv": 0.06572597229755789,
+      "height_std": 0.012586721896180394,
+      "mean_height": 0.41419015753393373,
+      "steady_samples": 960
+    },
+    "history": [
+      {
+        "name": "axis_0_alternating",
+        "phase": "probe",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.21540580832439918,
+          "lateral_speed": 0.001741686204206714,
+          "drift_ratio": 0.008085604644345292,
+          "heading_error_deg": 0.46326092557146964,
+          "body_heading_error_deg": 4.936109828007536,
+          "yaw_std_deg": 5.616053529504576,
+          "speed_mean_abs": 0.21390687117698284,
+          "speed_std": 0.015045837026047428,
+          "speed_cv": 0.07033825955781833,
+          "height_std": 0.012903202620931092,
+          "mean_height": 0.4137814329005778,
+          "steady_samples": 576
+        }
+      },
+      {
+        "name": "axis_0_alternating",
+        "phase": "confirm",
+        "metrics": {
+          "passed": true,
+          "reason": "accepted",
+          "checks": {
+            "forward_speed": true,
+            "lateral_speed": true,
+            "drift_ratio": true,
+            "heading_error": true,
+            "speed_cv": true,
+            "height_std": true,
+            "mean_height": true
+          },
+          "criteria": {
+            "min_forward_speed": 0.02,
+            "max_lateral_speed": 0.02,
+            "max_drift_ratio": 0.25,
+            "max_heading_error_deg": 12.0,
+            "max_speed_cv": 0.35,
+            "max_height_std": 0.035,
+            "min_mean_height": 0.2
+          },
+          "forward_speed": 0.21203865597220728,
+          "lateral_speed": 0.003960787671171773,
+          "drift_ratio": 0.018679554692569492,
+          "heading_error_deg": 1.0701351927340093,
+          "body_heading_error_deg": 4.938701062892037,
+          "yaw_std_deg": 5.001993467276902,
+          "speed_mean_abs": 0.21418505428193152,
+          "speed_std": 0.014077520944285164,
+          "speed_cv": 0.06572597229755789,
+          "height_std": 0.012586721896180394,
+          "mean_height": 0.41419015753393373,
+          "steady_samples": 960
+        }
+      }
+    ]
+  }
+]
