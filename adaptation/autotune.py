@@ -83,7 +83,20 @@ def score_metrics(metrics: Dict[str, object]) -> float:
 
 
 def refine_axis_from_trajectory(description: Dict, plan: Dict, trajectory) -> Dict:
-    """Re-plan along the steady displacement measured by a simulation probe."""
+    """Calibrate the realised course without changing the probed motor map.
+
+    ``final_forward_axis`` is the course used by trajectory validation and
+    cross-track feedback.  ``actuation_forward_axis`` is the morphology axis
+    that was used to assign left/right joint signs.  They normally coincide,
+    but an irregular linkage can move repeatably on an oblique course even
+    though its phase plan was built on the morphology PCA axis.
+
+    Earlier code rebuilt the whole gait on the measured displacement.  That
+    also changed leg ordering, phase offsets and swing signs, so the confirmed
+    episode was no longer a validation of the successful probe.  Preserve the
+    complete plan here and only learn its realised course.  Callers must still
+    run a fresh episode after this calibration.
+    """
     samples = np.asarray(trajectory, dtype=float)
     if samples.ndim != 2 or len(samples) < 10:
         return copy.deepcopy(plan)
@@ -91,6 +104,23 @@ def refine_axis_from_trajectory(description: Dict, plan: Dict, trajectory) -> Di
     displacement = samples[-1, :2] - samples[start, :2]
     if float(np.linalg.norm(displacement)) < 1e-4:
         return copy.deepcopy(plan)
-    refined = compute_adaptive_plan(description, {}, forced_axis=_unit(displacement).tolist())
-    refined["cpg"]["mode"] = plan.get("cpg", {}).get("mode", refined["cpg"]["mode"])
+
+    refined = copy.deepcopy(plan)
+    previous_course = _unit(plan.get("final_forward_axis", [1.0, 0.0]))
+    actuation_axis = _unit(plan.get("actuation_forward_axis", previous_course))
+    realised_course = _unit(displacement)
+    refined["actuation_forward_axis"] = actuation_axis.tolist()
+    refined["final_forward_axis"] = realised_course.tolist()
+    speed = float(np.linalg.norm(np.asarray(
+        plan.get("drive_resultant_xy", previous_course), dtype=float,
+    )[:2]))
+    refined["drive_resultant_xy"] = (realised_course * speed).tolist()
+    refined["axis_calibration"] = {
+        "method": "fresh_probe_steady_displacement",
+        "probe_start_fraction": 0.2,
+        "previous_course_axis": previous_course.tolist(),
+        "actuation_forward_axis": actuation_axis.tolist(),
+        "realised_course_axis": realised_course.tolist(),
+        "probe_displacement_xy": displacement.tolist(),
+    }
     return refined

@@ -31,6 +31,7 @@ from adaptation.mpc import (
     RobotPhysicsParser,
     build_mpc_params,
 )
+from adaptation.phase import binary_phase_offsets, clip_duty_factor, phase_state
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 辅助函数：旋转矩阵 / 斜对称矩阵
@@ -68,11 +69,18 @@ class CPGScheduler:
         frequency_hz: float = 0.85,
         duty_factor: float = 0.60,
         dt: float = 0.02,
+        per_leg_duty_factors: Optional[Dict[int, float]] = None,
+        passive_leg_ids: Optional[List[int]] = None,
     ):
         self.leg_ids = leg_ids
         self.phase_offsets = {int(k): float(v) for k, v in phase_offsets.items()}
         self.frequency_hz = frequency_hz
-        self.duty_factor = duty_factor
+        self.duty_factor, _ = clip_duty_factor(duty_factor)
+        self.per_leg_duty_factors = {
+            int(k): clip_duty_factor(float(v))[0]
+            for k, v in (per_leg_duty_factors or {}).items()
+        }
+        self.passive_leg_ids = {int(v) for v in (passive_leg_ids or [])}
         self.dt = dt
         self.t = 0.0
 
@@ -85,10 +93,13 @@ class CPGScheduler:
         phase_states: Dict[int, str] = {}
         omega = 2.0 * np.pi * self.frequency_hz
         for lid in self.leg_ids:
+            if lid in self.passive_leg_ids:
+                phase_states[lid] = "stance"
+                continue
             offset = self.phase_offsets.get(lid, 0.0)
-            phi = (omega * self.t + offset) % (2.0 * np.pi)
-            normalized = phi / (2.0 * np.pi)   # ∈ [0, 1)
-            phase_states[lid] = "stance" if normalized < self.duty_factor else "swing"
+            duty = self.per_leg_duty_factors.get(lid, self.duty_factor)
+            state = phase_state(omega * self.t + offset, duty)
+            phase_states[lid] = "stance" if state.is_stance else "swing"
         self.t += self.dt
         return phase_states
 
@@ -424,9 +435,14 @@ def run_demo(json_path: str, n_steps: int = 200, dt: float = 0.02):
         plan = compute_adaptive_plan(description, {})
         cpg_cfg = plan["cpg"]
         phase_offsets = {int(k): float(v) for k, v in cpg_cfg["phase_offsets"].items()}
+        per_leg_duty_factors = {
+            int(k): float(v)
+            for k, v in cpg_cfg.get("per_leg_duty_factors", {}).items()
+        }
         freq_hz = cpg_cfg["frequency_hz"]
         duty_factor = cpg_cfg["duty_factor"]
         leg_ids = sorted(physics.foot_positions.keys())
+        passive_leg_ids = list(plan.get("topology", {}).get("groups", {}).get("group_c", []))
         print(f"    group_a         : {plan['topology']['groups']['group_a']}")
         print(f"    group_b         : {plan['topology']['groups']['group_b']}")
         print(f"    CPG freq        : {freq_hz:.2f} Hz")
@@ -434,12 +450,20 @@ def run_demo(json_path: str, n_steps: int = 200, dt: float = 0.02):
     except Exception as e:
         print(f"    [警告] 步态规划加载失败: {e}，使用默认参数")
         leg_ids = sorted(physics.foot_positions.keys())
-        phase_offsets = {lid: (np.pi if lid % 2 == 1 else 0.0) for lid in leg_ids}
+        phase_offsets = binary_phase_offsets(
+            {"group_a": leg_ids[::2], "group_b": leg_ids[1::2]}, leg_ids
+        )
+        per_leg_duty_factors = {}
+        passive_leg_ids = []
         freq_hz, duty_factor = 0.85, 0.60
 
     # ── Step 3: 初始化各模块 ────────────────────────────────────────────────
     foot_arr = physics.foot_positions_array          # (n_legs, 3) 默认足端位置
-    cpg = CPGScheduler(leg_ids, phase_offsets, freq_hz, duty_factor, dt)
+    cpg = CPGScheduler(
+        leg_ids, phase_offsets, freq_hz, duty_factor, dt,
+        per_leg_duty_factors=per_leg_duty_factors,
+        passive_leg_ids=passive_leg_ids,
+    )
     mpc = SRBMPCController(physics, weights, dt, horizon=10)
     sim = SimpleSRBSimulator(physics, dt)
 

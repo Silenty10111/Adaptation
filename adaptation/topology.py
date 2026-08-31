@@ -44,6 +44,15 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+from adaptation.phase import (
+    PHASE_STRATEGIES,
+    build_phase_offsets,
+    circular_mean,
+    clip_duty_factor,
+    resolve_duty_factors,
+    wrap_2pi,
+)
+
 
 # ---------------------------------------------------------------------------
 # 虚拟支撑结构常量
@@ -353,12 +362,14 @@ class VirtualLegController:
             virtual_phase_right,
         ], dtype=float)
 
-        # 反映射：real_phase_i = Σ_v T^†[i,v] * virtual_phase_v
-        real_phases = self._T_pinv @ virtual_phases
-
         result: Dict[int, float] = {}
         for i, lid in enumerate(self._topo.real_leg_ids):
-            result[lid] = float(real_phases[i]) % (2 * math.pi)
+            # Phase is circular: use the non-negative assignment weights on
+            # the unit circle instead of linearly averaging values near 0/2π.
+            weights = np.asarray(self._T[:, i], dtype=float)
+            result[lid] = circular_mean(
+                virtual_phases.tolist(), weights=weights.tolist(),
+            )
 
         return result
 
@@ -484,6 +495,7 @@ def zero_shot_gait_plan(
     frequency_hz: float = 0.85,
     duty_factor: float = 0.60,
     sigma: float = 0.0,
+    state: Optional[Dict] = None,
 ) -> Dict:
     """
     零样本步态生成：无需预设任何形态假设，
@@ -509,13 +521,19 @@ def zero_shot_gait_plan(
     -------
     Dict  兼容 adaptation.gait 输出格式的步态计划
     """
+    state = state or {}
+    missing_ids = {int(v) for v in state.get("missing_leg_ids", [])}
+    locked_ids = {int(v) for v in state.get("locked_leg_ids", [])}
+
     # 步骤 1：从描述中提取足端位置和质心
     foot_positions_xy: Dict[int, np.ndarray] = {}
     for link in description.get("links", []):
         if link.get("role") != "foot" or link.get("leg_id") is None:
             continue
         origin = np.asarray(link.get("default_world_origin", [0., 0., 0.]), dtype=float)
-        foot_positions_xy[int(link["leg_id"])] = origin[:2]
+        leg_id = int(link["leg_id"])
+        if leg_id not in missing_ids:
+            foot_positions_xy[leg_id] = origin[:2]
 
     # 计算质心
     com_xy = np.zeros(2, dtype=float)
@@ -564,6 +582,9 @@ def zero_shot_gait_plan(
 
     # 步骤 4：生成腿组分配
     group_a, group_b, group_c = controller.generate_alternating_groups()
+    group_a = [lid for lid in group_a if lid not in locked_ids]
+    group_b = [lid for lid in group_b if lid not in locked_ids]
+    group_c = sorted(set(group_c) | (locked_ids & set(foot_positions_xy)))
 
     # 步骤 5：生成虚拟相位和步幅
     # 标准交替步态：前虚拟节点相位=0, 后虚拟节点相位=π
@@ -609,7 +630,66 @@ def zero_shot_gait_plan(
 
     topo_summary = controller.get_topology_summary()
 
-    phase_offsets = {str(lid): float(real_phases.get(lid, 0.0)) for lid in foot_positions_xy}
+    active_phase_ids = sorted(set(group_a) | set(group_b))
+    phase_offsets = {
+        str(lid): wrap_2pi(float(real_phases.get(lid, 0.0)))
+        for lid in active_phase_ids
+    }
+    cpg_state = state.get("cpg", {}) if isinstance(state.get("cpg", {}), dict) else {}
+    configured_strategy = str(cpg_state.get("phase_strategy", "")).strip().lower()
+    configured_wave_count = cpg_state.get("wave_count", None)
+    selected_wave_count = (
+        0.0 if configured_wave_count is None and configured_strategy == "adaptive_wave"
+        else float(configured_wave_count if configured_wave_count is not None else 1.0)
+    )
+    phase_strategy = "topology_invariant"
+    if configured_strategy in PHASE_STRATEGIES:
+        phase_strategy = str(configured_strategy)
+        generated, selected_wave_count = build_phase_offsets(
+            strategy=phase_strategy,
+            foot_positions=foot_positions_xy,
+            forward_axis=forward_axis,
+            groups={"group_a": group_a, "group_b": group_b, "group_c": group_c},
+            active_leg_ids=active_phase_ids,
+            missing_leg_ids=missing_ids,
+            locked_leg_ids=locked_ids,
+            wave_count=selected_wave_count,
+            wave_direction=float(cpg_state.get("wave_direction", 1.0)),
+            lateral_phase_lag=float(cpg_state.get("lateral_phase_lag", math.pi)),
+        )
+        phase_offsets = {str(lid): wrap_2pi(value) for lid, value in generated.items()}
+    configured_offsets = cpg_state.get("phase_offsets", {})
+    if isinstance(configured_offsets, dict):
+        for raw_leg_id, raw_offset in configured_offsets.items():
+            try:
+                leg_id = int(raw_leg_id)
+                if leg_id in active_phase_ids:
+                    phase_offsets[str(leg_id)] = wrap_2pi(float(raw_offset))
+            except (TypeError, ValueError):
+                continue
+    requested_duty = float(
+        state.get("cpg", {}).get("duty_factor", duty_factor)
+        if isinstance(state.get("cpg", {}), dict) else duty_factor
+    )
+    resolved_duty, duty_clipped = clip_duty_factor(requested_duty)
+    per_leg_duties, per_leg_diagnostics = resolve_duty_factors(
+        {"cpg": {
+            "duty_factor": resolved_duty,
+            "per_leg_duty_factors": cpg_state.get("per_leg_duty_factors", {}),
+        }},
+        active_phase_ids,
+    )
+    duty_diagnostics = (
+        [f"cpg.duty_factor clipped from {requested_duty:.6g} to {resolved_duty:.6g}"]
+        if duty_clipped else []
+    ) + per_leg_diagnostics
+    physical_leg_ids = sorted(foot_positions_xy)
+    zeroed_edges = [
+        {"leg_i": int(a), "leg_j": int(b), "reason": "locked"}
+        for index, a in enumerate(physical_leg_ids)
+        for b in physical_leg_ids[index + 1:]
+        if a in locked_ids or b in locked_ids
+    ]
 
     plan = {
         # 兼容字段
@@ -632,11 +712,20 @@ def zero_shot_gait_plan(
             "yaw_levers": {},
         },
         "cpg": {
-            "active_leg_ids": sorted(foot_positions_xy.keys()),
+            "phase_strategy": phase_strategy,
+            "active_leg_ids": active_phase_ids,
             "phase_offsets": phase_offsets,
+            "per_leg_duty_factors": {
+                str(lid): value for lid, value in per_leg_duties.items()
+            },
             "frequency_hz": frequency_hz,
             "omega": 2.0 * math.pi * frequency_hz,
-            "duty_factor": duty_factor,
+            "duty_factor": resolved_duty,
+            "duty_factor_requested": requested_duty,
+            "duty_factor_diagnostics": duty_diagnostics,
+            "wave_count": selected_wave_count,
+            "wave_direction": float(cpg_state.get("wave_direction", 1.0)),
+            "lateral_phase_lag": float(cpg_state.get("lateral_phase_lag", math.pi)),
         },
         "impedance": {
             "space": "joint",
@@ -655,8 +744,14 @@ def zero_shot_gait_plan(
             "phase_offsets": {"group_a": 0.0, "group_b": math.pi},
             "per_leg_stride_amplitudes": per_leg_stride_amplitudes,
             "swing_projections": {str(lid): 1.0 for lid in foot_positions_xy},
-            "inhibition_rules": [],
-            "coupling_matrix_zeroed_edges": [],
+            "inhibition_rules": [
+                {"leg_id": lid, "reason": "locked", "in_degree": 0.0, "out_degree": 0.0}
+                for lid in sorted(locked_ids & set(foot_positions_xy))
+            ] + [
+                {"leg_id": lid, "reason": "missing", "in_degree": 0.0, "out_degree": 0.0}
+                for lid in sorted(missing_ids)
+            ],
+            "coupling_matrix_zeroed_edges": zeroed_edges,
         },
         # 拓扑不变性扩展字段
         "topology_invariant": {

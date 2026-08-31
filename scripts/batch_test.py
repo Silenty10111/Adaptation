@@ -107,6 +107,12 @@ from adaptation.sim import (
     SWING_DROP_RATIO, STANCE_DROP_RATIO, BODY_HEIGHT, HOLD_STEPS, _RobotSimCtx,
 )
 from adaptation.validation import evaluate_trajectory
+from adaptation.diagnostics import diagnose_trajectory_only
+from adaptation.phase import (
+    leg_phase_state,
+    resolve_duty_factors,
+    resolve_phase_offsets,
+)
 
 # ---------------------------------------------------------------------------
 # Isaac Gym imports (available after re-exec)
@@ -242,8 +248,6 @@ def run_gait_sim(
     gait_plan = gait_plan_override if gait_plan_override is not None else _load_plan(description)
     forward_axis = list(gait_plan.get("final_forward_axis", [1.0, 0.0]))
     topo = gait_plan["topology"]
-    group_a = topo["groups"]["group_a"]
-    group_b = topo["groups"]["group_b"]
     group_c = topo["groups"].get("group_c", [])
 
     # ---- sim setup ----------------------------------------------------------
@@ -318,6 +322,13 @@ def run_gait_sim(
                 "swing_lower":float(lower[name2idx[sn]]),  "swing_upper":float(upper[name2idx[sn]]),
                 "drop_lower": float(lower[name2idx[dn]]),  "drop_upper": float(upper[name2idx[dn]]),
             }
+        phase_offsets = resolve_phase_offsets(gait_plan, triplets)
+        duty_factors, duty_diagnostics = resolve_duty_factors(gait_plan, triplets)
+        for message in duty_diagnostics:
+            print(f"[Phase] {message}")
+        gait_frequency = float(
+            gait_plan.get("cpg", {}).get("frequency_hz", GAIT_FREQUENCY)
+        )
 
         # --- stand targets ---
         foot_z_vals = [float(lk["default_world_origin"][2])
@@ -412,7 +423,7 @@ def run_gait_sim(
         max_steps  = n_max_steps if n_max_steps is not None else max(MAX_SIM_STEPS, SIM_STEPS)
 
         for step in range(max(max_steps, 1)):
-            phase_now = 2.0 * math.pi * max(GAIT_FREQUENCY, 0.02) * sim_time
+            phase_now = 2.0 * math.pi * max(gait_frequency, 0.02) * sim_time
             targets = stand.copy()
 
             for lid, j in triplets.items():
@@ -422,13 +433,10 @@ def run_gait_sim(
                     targets[j["swing_idx"]] = _ratio_to_joint(j["swing_lower"], j["swing_upper"], 0.5)
                     continue
 
-                if   lid in group_b: lg_ph = phase_now + math.pi
-                elif lid in group_a: lg_ph = phase_now
-                else:                lg_ph = 0.0
-
-                sw = float(math.sin(lg_ph))
-                # Quintic smoothstep with widened window (±0.35) for C²-continuous transition
-                alpha = _smoothstep(-0.35, 0.35, sw)
+                state = leg_phase_state(
+                    phase_now, lid, phase_offsets, duty_factors,
+                )
+                sw, alpha = state.fore_aft, state.lift
                 foot_v = fmap.get(lid, np.zeros(2, dtype=float))
                 lat_p = float(np.dot(foot_v, lat))
                 # +lateral (left): positive Z-rotation → forward
@@ -441,7 +449,7 @@ def run_gait_sim(
                 sr  = 0.5 + eff_amp * dsign * sw
 
                 # touchdown ramp — quintic easing over 25 steps (≈0.42 s) for soft contact
-                is_sw = sw > 0.0
+                is_sw = not state.is_stance
                 if not is_sw:
                     if lid in touchdown_ramp:
                         touchdown_ramp[lid] += 1
@@ -1197,13 +1205,6 @@ def run_subbatch_full_pipeline(
     def _ss(e0, e1, x):
         t = max(0.0, min(1.0, (x - e0) / max(e1 - e0, 1e-9)))
         return t * t * (3.0 - 2.0 * t)
-    def _gait_wave(phase_rad, duty):
-        q = (phase_rad / (2.0 * math.pi)) % 1.0
-        if q < duty:
-            s = q / max(duty, 1e-9)
-            return 1.0 - 2.0 * _ss(0.0, 1.0, s), 0.0
-        s = (q - duty) / max(1.0 - duty, 1e-9)
-        return -1.0 + 2.0 * _ss(0.0, 1.0, s), math.sin(math.pi * s) ** 2
     def _fwd_vel(trail, fwd_ax):
         if len(trail) < 2:
             return 0.0
@@ -1435,12 +1436,11 @@ def run_subbatch_full_pipeline(
             rs["group_c"]   = topo["groups"].get("group_c", [])
             rs["fwd_list"]  = fwd_arr.tolist()
             cpg = plan.get("cpg", {})
-            rs["gait_mode"] = str(cpg.get("mode", "legacy_sine"))
             rs["gait_frequency"] = float(cpg.get("frequency_hz", GAIT_FREQUENCY))
-            rs["duty_factor"] = float(np.clip(cpg.get("duty_factor", 0.5), 0.50, 0.92))
-            rs["phase_offsets"] = {
-                int(k): float(v) for k, v in cpg.get("phase_offsets", {}).items()
-            }
+            rs["phase_offsets"] = resolve_phase_offsets(plan, rs["triplets"])
+            rs["duty_factors"], rs["duty_diagnostics"] = resolve_duty_factors(
+                plan, rs["triplets"],
+            )
             rs["base_amplitudes"] = dict(per_amp)
             rs["yaw_integral"] = 0.0
             rs["planned_yaw"] = float(plan.get("body_yaw_target", 0.0))
@@ -1469,26 +1469,17 @@ def run_subbatch_full_pipeline(
                             tgt[j["drop_idx"]]  = _rtj(j["drop_lower"], j["drop_upper"], rs["_sd"])
                             tgt[j["swing_idx"]] = _rtj(j["swing_lower"], j["swing_upper"], 0.5)
                             continue
-                        if lid in rs["phase_offsets"]:
-                            lg_ph = ph_now + rs["phase_offsets"][lid]
-                        elif lid in rs["group_b"]:
-                            lg_ph = ph_now + math.pi
-                        elif lid in rs["group_a"]:
-                            lg_ph = ph_now
-                        else:
-                            lg_ph = 0.0
-                        if rs["gait_mode"] in ("tripod", "alternating", "wave"):
-                            sw, alpha = _gait_wave(lg_ph, rs["duty_factor"])
-                        else:
-                            sw = float(math.sin(lg_ph))
-                            alpha = _ss(-0.30, 0.30, sw)
+                        state = leg_phase_state(
+                            ph_now, lid, rs["phase_offsets"], rs["duty_factors"],
+                        )
+                        sw, alpha = state.fore_aft, state.lift
                         fv    = rs["fmap"].get(lid, np.zeros(2))
                         dsign = 1.0 if float(np.dot(fv, rs["lat"])) > 0.0 else -1.0
                         ea    = SWING_AMP * float(rs["per_amp"].get(str(lid), 1.0))
                         lr    = rs["_sl"] + (rs["_swl"] - rs["_sl"]) * alpha
                         dr    = rs["_sd"] + (rs["_swd"] - rs["_sd"]) * alpha
                         sr    = 0.5 + ea * dsign * sw
-                        if alpha <= 1e-6:
+                        if state.is_stance:
                             if lid in rs["td_ramp"]:
                                 rs["td_ramp"][lid] += 1
                                 rp = min(rs["td_ramp"][lid] / 8, 1.0)
@@ -1705,26 +1696,17 @@ def run_subbatch_full_pipeline(
                         tgt[j["drop_idx"]]  = _rtj(j["drop_lower"], j["drop_upper"], rs["_sd"])
                         tgt[j["swing_idx"]] = _rtj(j["swing_lower"], j["swing_upper"], 0.5)
                         continue
-                    if lid in rs["phase_offsets"]:
-                        lg_ph = ph_now + rs["phase_offsets"][lid]
-                    elif lid in rs["group_b"]:
-                        lg_ph = ph_now + math.pi
-                    elif lid in rs["group_a"]:
-                        lg_ph = ph_now
-                    else:
-                        lg_ph = 0.0
-                    if rs["gait_mode"] in ("tripod", "alternating", "wave"):
-                        sw, alpha = _gait_wave(lg_ph, rs["duty_factor"])
-                    else:
-                        sw = float(math.sin(lg_ph))
-                        alpha = _ss(-0.30, 0.30, sw)
+                    state = leg_phase_state(
+                        ph_now, lid, rs["phase_offsets"], rs["duty_factors"],
+                    )
+                    sw, alpha = state.fore_aft, state.lift
                     fv    = rs["fmap"].get(lid, np.zeros(2))
                     dsign = 1.0 if float(np.dot(fv, rs["lat"])) > 0.0 else -1.0
                     ea    = SWING_AMP * float(rs["per_amp"].get(str(lid), 1.0))
                     lr    = rs["_sl"] + (rs["_swl"] - rs["_sl"]) * alpha
                     dr    = rs["_sd"] + (rs["_swd"] - rs["_sd"]) * alpha
                     sr    = 0.5 + ea * dsign * sw
-                    if alpha <= 1e-6:
+                    if state.is_stance:
                         if lid in rs["td_ramp"]:
                             rs["td_ramp"][lid] += 1
                             rp = min(rs["td_ramp"][lid] / 8, 1.0)
@@ -2005,6 +1987,11 @@ def run_gait_sim_parallel_final(
             if "_per_amp_override" in gait_plan:
                 per_amp = {str(k): float(v) for k, v in gait_plan["_per_amp_override"].items()}
 
+            phase_offsets = resolve_phase_offsets(gait_plan, triplets)
+            duty_factors, duty_diagnostics = resolve_duty_factors(gait_plan, triplets)
+            for diagnostic in duty_diagnostics:
+                print(f"  [ParallelSim] {diagnostic}")
+
             if fmap:
                 foot_pts = np.array(list(fmap.values()), dtype=float)
                 body_length = float(np.max(foot_pts.max(axis=0) - foot_pts.min(axis=0)))
@@ -2024,6 +2011,9 @@ def run_gait_sim_parallel_final(
                 "group_a":  topo["groups"]["group_a"],
                 "group_b":  topo["groups"]["group_b"],
                 "group_c":  topo["groups"].get("group_c", []),
+                "phase_offsets": phase_offsets,
+                "duty_factors": duty_factors,
+                "gait_frequency": float(gait_plan.get("cpg", {}).get("frequency_hz", GAIT_FREQUENCY)),
                 "touchdown_ramp": {},
                 "com_trail": [],
                 "forward_axis": fwd_arr.tolist(),
@@ -2073,12 +2063,11 @@ def run_gait_sim_parallel_final(
         sim_time = 0.0
 
         for step in range(_max_steps):
-            phase_now = 2.0 * math.pi * GAIT_FREQUENCY * sim_time
-
             for i in valid_idx:
                 rs = robot_states[i]
                 if rs["done"]:
                     continue
+                phase_now = 2.0 * math.pi * rs["gait_frequency"] * sim_time
                 targets  = rs["stand_ev"].copy()
                 tri      = rs["triplets"]
                 group_a  = rs["group_a"]
@@ -2096,12 +2085,14 @@ def run_gait_sim_parallel_final(
                         targets[j["swing_idx"]] = _rtj(j["swing_lower"], j["swing_upper"], 0.5)
                         continue
 
-                    if   lid in group_b: lg_ph = phase_now + math.pi
-                    elif lid in group_a: lg_ph = phase_now
-                    else:               lg_ph = 0.0
-
-                    sw    = float(math.sin(lg_ph))
-                    alpha = _ss(-0.30, 0.30, sw)
+                    phase_state = leg_phase_state(
+                        phase_now,
+                        lid,
+                        rs["phase_offsets"],
+                        rs["duty_factors"],
+                    )
+                    sw = phase_state.fore_aft
+                    alpha = phase_state.lift
                     fv    = rs["fmap"].get(lid, np.zeros(2))
                     dsign = 1.0 if float(np.dot(fv, lat)) > 0.0 else -1.0
                     eff_amp = SWING_AMP * float(per_amp.get(str(lid), 1.0))
@@ -2110,7 +2101,7 @@ def run_gait_sim_parallel_final(
                     dr = _sd  + (_swd - _sd) * alpha
                     sr = 0.5  + eff_amp * dsign * sw
 
-                    is_sw = sw > 0.0
+                    is_sw = not phase_state.is_stance
                     if not is_sw:
                         if lid in tdr:
                             tdr[lid] += 1
@@ -2194,6 +2185,8 @@ def plot_demo(
     lat_dist: float,
     out_path: Path,
     metrics: Optional[dict] = None,
+    gait_plan: Optional[dict] = None,
+    gait_plan_source: str = "executed_final_plan",
 ) -> None:
     import tempfile
     data = {
@@ -2206,6 +2199,8 @@ def plot_demo(
         "lat_dist":    lat_dist,
         "metrics":     metrics or {},
         "out_path":    str(out_path),
+        "gait_plan": gait_plan,
+        "gait_plan_source": gait_plan_source,
     }
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         json.dump(data, f)
@@ -2223,11 +2218,30 @@ def plot_demo(
         Path(tmp_path).unlink(missing_ok=True)
 
 
+def sync_robot_plot_outputs(robot_dir: Path, png_dir: Path, robot_name: str) -> List[Path]:
+    """Copy trajectory and left/right heatmap images into the flat gallery."""
+    copied: List[Path] = []
+    names = ("trajectory.png", "gait_heatmap.png")
+    for filename in names:
+        source = robot_dir / filename
+        if not source.exists():
+            continue
+        label = Path(filename).stem
+        destination = png_dir / f"{robot_name}__{label}.png"
+        shutil.copy2(source, destination)
+        copied.append(source)
+        # Preserve the historical trajectory gallery filename.
+        if filename == "trajectory.png":
+            shutil.copy2(source, png_dir / f"{robot_name}.png")
+    return copied
+
+
 def save_trajectory_data(
     out_path: Path,
     com_trail: List[List[float]],
     forward_axis: List[float],
     metrics: dict,
+    episode_diagnostics: Optional[dict] = None,
     max_saved_samples: int = 1500,
 ) -> None:
     """Save auditable, bounded-size trajectory data alongside each PNG."""
@@ -2242,6 +2256,11 @@ def save_trajectory_data(
         "saved_stride": stride,
         "forward_axis": list(forward_axis),
         "metrics": metrics,
+        "episode_diagnostics": episode_diagnostics,
+        "related_visualizations": {
+            "planned_joint_target_heatmap": "gait_heatmap.png",
+            "planned_gait_raster_data": "gait_visualization.json",
+        },
         "samples": sampled,
     }
     out_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
@@ -2454,16 +2473,22 @@ def generate_html_report(out_root: Path, summary_rows: List[dict]) -> Path:
         ssm_data = f"{r['ssm']:.6f}" if "ssm" in r else "-9999"
         legs_data = str(r.get("num_legs", 0))
 
-        # Thumbnail: relative path from report.html sibling location
-        img_rel  = f"{name}/trajectory.png"
-        img_path = out_root / name / "trajectory.png"
-        if img_path.exists():
-            thumb_td = (
-                f'<td class="thumb-cell">'
-                f'<img class="thumb" src="{img_rel}" alt="{name}" '
-                f'onclick="openModal(\'{img_rel}\', \'{name}\')" loading="lazy"/>'
-                f'</td>'
-            )
+        # Thumbnails: trajectory + left/right planned leg-angle heatmap.
+        gallery = []
+        for filename, title in (
+            ("trajectory.png", "Trajectory"),
+            ("gait_heatmap.png", "Joint target heatmap"),
+        ):
+            img_rel = f"{name}/{filename}"
+            if (out_root / name / filename).exists():
+                gallery.append(
+                    f'<div class="thumb-item"><span>{title}</span>'
+                    f'<img class="thumb" src="{img_rel}" alt="{name} {title}" '
+                    f'onclick="openModal(\'{img_rel}\', \'{name} — {title}\')" loading="lazy"/>'
+                    f'</div>'
+                )
+        if gallery:
+            thumb_td = f'<td class="thumb-cell"><div class="thumb-gallery">{"".join(gallery)}</div></td>'
         else:
             thumb_td = '<td class="thumb-cell"><span style="color:#aaa">—</span></td>'
 
@@ -2526,8 +2551,10 @@ def generate_html_report(out_root: Path, summary_rows: List[dict]) -> Path:
   td       {{ padding: 5px 10px; border-bottom: 1px solid #e0e0e0;
               vertical-align: middle; }}
   tr:hover {{ filter: brightness(0.95); }}
-  .thumb-cell {{ width: 90px; text-align: center; padding: 3px; }}
-  .thumb   {{ width: 80px; height: auto; cursor: zoom-in; border-radius: 4px;
+  .thumb-cell {{ min-width: 270px; text-align: center; padding: 3px; }}
+  .thumb-gallery {{ display:flex; gap:5px; justify-content:center; align-items:flex-end; }}
+  .thumb-item {{ display:flex; flex-direction:column; gap:2px; font-size:0.68rem; color:#555; }}
+  .thumb   {{ width: 82px; height: auto; cursor: zoom-in; border-radius: 4px;
               transition: transform .15s; }}
   .thumb:hover {{ transform: scale(1.12); }}
   .filter-bar {{ display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }}
@@ -2616,7 +2643,7 @@ def generate_html_report(out_root: Path, summary_rows: List[dict]) -> Path:
       <th onclick="sortTable(6)">Drift<span class="sort-icon">⇅</span></th>
       <th onclick="sortTable(7)">Strategy<span class="sort-icon">⇅</span></th>
       <th onclick="sortTable(8)">Category<span class="sort-icon">⇅</span></th>
-      <th>Trajectory</th>
+      <th>Trajectory / left-right gait heatmap</th>
     </tr>
   </thead>
   <tbody id="robot-tbody">
@@ -2780,8 +2807,6 @@ def run_ekf_online_simulation(
     lat = np.array([-fwd[1], fwd[0]], dtype=float)
 
     topo = plan["topology"]
-    group_a = topo["groups"]["group_a"]
-    group_b = topo["groups"]["group_b"]
     group_c = topo["groups"].get("group_c", [])
     base_amps = {str(k): float(v) for k, v in topo.get("per_leg_stride_amplitudes", {}).items()}
 
@@ -2795,6 +2820,11 @@ def run_ekf_online_simulation(
         ga = ctx._ga
         gym, sim, env, actor = ctx.gym, ctx.sim, ctx.env, ctx.actor
         ctx._reset()
+        phase_offsets = resolve_phase_offsets(plan, ctx.triplets)
+        duty_factors, duty_diagnostics = resolve_duty_factors(plan, ctx.triplets)
+        for diagnostic in duty_diagnostics:
+            print(f"  [EKFSim] {diagnostic}")
+        gait_frequency = float(plan.get("cpg", {}).get("frequency_hz", GAIT_FREQUENCY))
 
         def _rtj(lo, hi, r):
             return float(lo + max(0.0, min(1.0, r)) * (hi - lo))
@@ -2810,7 +2840,7 @@ def run_ekf_online_simulation(
         _dt = 1.0 / 60.0
 
         for step in range(n_steps):
-            phase_now = 2.0 * math.pi * GAIT_FREQUENCY * sim_time
+            phase_now = 2.0 * math.pi * gait_frequency * sim_time
             targets = ctx.stand_ev.copy()
 
             adapt = estimator.get_state()
@@ -2823,12 +2853,11 @@ def run_ekf_online_simulation(
                     targets[j["swing_idx"]] = _rtj(j["swing_lower"], j["swing_upper"], 0.5)
                     continue
 
-                if lid in group_b: lg_ph = phase_now + math.pi
-                elif lid in group_a: lg_ph = phase_now
-                else: lg_ph = 0.0
-
-                sw_val = float(math.sin(lg_ph))
-                alpha = _ss(-0.30, 0.30, sw_val)
+                phase_state = leg_phase_state(
+                    phase_now, lid, phase_offsets, duty_factors
+                )
+                sw_val = phase_state.fore_aft
+                alpha = phase_state.lift
                 fv = ctx.fmap.get(lid, np.zeros(2))
                 dsign = 1.0 if float(np.dot(fv, lat)) > 0.0 else -1.0
 
@@ -2840,7 +2869,7 @@ def run_ekf_online_simulation(
                 dr = _sd + (_swd - _sd) * alpha
                 sr = 0.5 + eff_amp * dsign * sw_val
 
-                is_sw = sw_val > 0.0
+                is_sw = not phase_state.is_stance
                 if not is_sw:
                     if lid in touchdown_ramp:
                         touchdown_ramp[lid] += 1
@@ -3020,6 +3049,7 @@ def main() -> None:
     global NUM_ROBOTS, SIM_STEPS, MAX_SIM_STEPS, MIN_TRAVEL_BODY_LENGTHS
     global ISOLATED_CHUNK_SIZE, OUTPUT_DIR, INCLUDE_STANDARD_HEXAPOD, EXECUTION_MODE
     args = parse_args()
+    from adaptation.gait import compute_adaptive_plan
     NUM_ROBOTS = max(0, args.num_robots)
     SIM_STEPS = max(60, args.sim_steps)
     MAX_SIM_STEPS = max(SIM_STEPS, args.max_sim_steps)
@@ -3090,21 +3120,30 @@ def main() -> None:
             lat_dist = float(np.dot(disp, lat))
             metrics = evaluate_trajectory(com_trail, forward_axis,
                                           gait_frequency_hz=GAIT_FREQUENCY)
+            episode_diagnostics = diagnose_trajectory_only(
+                com_trail, forward_axis,
+                active_leg_count=int(description.get("num_legs", 0)),
+            )
+            standard_plan = compute_adaptive_plan(
+                description, {}, forced_axis=list(forward_axis),
+            )
             print(f"  [Sim]  steps={len(com_trail)}  fwd={fwd_dist:+.3f}m  lat={lat_dist:+.3f}m")
             out_img = robot_dir / "trajectory.png"
             plot_demo(robot_name, description, ssm_result, com_trail, forward_axis,
-                      fwd_dist, lat_dist, out_img, metrics)
+                      fwd_dist, lat_dist, out_img, metrics, standard_plan,
+                      "reconstructed_from_executed_axis")
             save_trajectory_data(robot_dir / "trajectory.json", com_trail,
-                                 forward_axis, metrics)
+                                 forward_axis, metrics, episode_diagnostics)
             if out_img.exists():
                 all_png_paths.append(out_img)
-                shutil.copy2(out_img, png_dir / (robot_name + ".png"))
+                sync_robot_plot_outputs(robot_dir, png_dir, robot_name)
             summary_rows.append({
                 "robot": robot_name, "status": "ok",
                 "ssm": ssm_result["ssm"], "num_legs": description.get("num_legs"),
                 "fwd_dist": fwd_dist, "lat_dist": lat_dist,
                 "locomotion_passed": metrics["passed"],
                 "metrics": metrics,
+                "episode_diagnostics": episode_diagnostics,
             })
         except Exception as e:
             print(f"  [Ref]  FAILED: {e}")
@@ -3149,14 +3188,21 @@ def main() -> None:
                 "locomotion_passed": False,
             })
             out_img = robot_dir / "trajectory.png"
-            plot_demo(robot_name, description, ssm_result, [], [1.0, 0.0], 0.0, 0.0, out_img)
+            try:
+                skipped_plan = compute_adaptive_plan(description, {})
+            except Exception:
+                skipped_plan = None
+            plot_demo(
+                robot_name, description, ssm_result, [], [1.0, 0.0],
+                0.0, 0.0, out_img, gait_plan=skipped_plan,
+                gait_plan_source="planned_without_simulation",
+            )
             if out_img.exists():
                 all_png_paths.append(out_img)
-                shutil.copy2(out_img, png_dir / (robot_name + ".png"))
+                sync_robot_plot_outputs(robot_dir, png_dir, robot_name)
             continue
 
         # ── Step 3: compute initial gait plan (no simulation) ──
-        from adaptation.gait import compute_adaptive_plan
         try:
             initial_plan = compute_adaptive_plan(description, {})
         except Exception as e:
@@ -3237,6 +3283,12 @@ def main() -> None:
             drift_ratio = abs(lat_dist) / max(abs(fwd_dist), 0.01)
             metrics = evaluate_trajectory(com_trail, forward_axis,
                                           gait_frequency_hz=GAIT_FREQUENCY)
+            episode_diagnostics = diagnose_trajectory_only(
+                com_trail, forward_axis,
+                active_leg_count=len(corrected_plan.get("cpg", {}).get(
+                    "active_leg_ids", range(int(description.get("num_legs", 0)))
+                )),
+            )
             strategy = "baseline"
             print(f"  [Sim]  {robot_name}  steps={len(com_trail)}"
                   f"  fwd={fwd_dist:+.3f}m  lat={lat_dist:+.3f}m  "
@@ -3253,12 +3305,13 @@ def main() -> None:
 
             out_img = robot_dir / "trajectory.png"
             plot_demo(robot_name, description, ssm_result, com_trail, forward_axis,
-                      fwd_dist, lat_dist, out_img, metrics)
+                      fwd_dist, lat_dist, out_img, metrics, corrected_plan,
+                      "executed_final_plan")
             save_trajectory_data(robot_dir / "trajectory.json", com_trail,
-                                 forward_axis, metrics)
+                                 forward_axis, metrics, episode_diagnostics)
             if out_img.exists():
                 all_png_paths.append(out_img)
-                shutil.copy2(out_img, png_dir / (robot_name + ".png"))
+                sync_robot_plot_outputs(robot_dir, png_dir, robot_name)
 
             summary_rows.append({
                 "robot":    robot_name,
@@ -3271,6 +3324,7 @@ def main() -> None:
                 "strategy": strategy,
                 "locomotion_passed": metrics["passed"],
                 "metrics": metrics,
+                "episode_diagnostics": episode_diagnostics,
                 "simulation_error": info.get("simulation_error"),
             })
 
@@ -3369,10 +3423,9 @@ def main() -> None:
     # ── Copy all PNGs to png/ (real-time copies are already done; this is a dedup pass) ──
     if all_png_paths:
         for png in all_png_paths:
-            dst = png_dir / (png.parent.name + ".png")
-            if not dst.exists():
-                shutil.copy2(png, dst)
-        print(f"[Batch] PNG folder: {png_dir}  ({len(all_png_paths)} images)")
+            sync_robot_plot_outputs(png.parent, png_dir, png.parent.name)
+        image_count = len(list(png_dir.glob("*.png")))
+        print(f"[Batch] PNG folder: {png_dir}  ({image_count} images)")
 
     # ── Generate batch analysis report ──
     report_path = generate_batch_report(out_root, summary_rows)

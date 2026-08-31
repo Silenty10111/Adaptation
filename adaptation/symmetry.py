@@ -41,6 +41,13 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+from adaptation.phase import (
+    circular_distance,
+    resolve_duty_factors,
+    resolve_phase_offsets,
+    wrap_2pi,
+)
+
 
 # ---------------------------------------------------------------------------
 # 数据结构
@@ -115,7 +122,8 @@ class DynamicSymmetryAnalyzer:
 
         占空比包络：
             φ_i(t) = 2π * freq * t + phase_offset_i
-            contact_i(t) = 1 if sin(φ_i(t)) < cos(π * duty_factor_i) else 0
+            q_i(t) = mod(φ_i(t), 2π) / 2π
+            contact_i(t) = 1 if q_i(t) < duty_factor_i else 0
             （duty_factor=0.6 意味着 60% 时间在支撑相）
 
         Returns
@@ -144,10 +152,8 @@ class DynamicSymmetryAnalyzer:
 
             # 时间域接触函数
             phi = 2.0 * np.pi * frequency_hz * t_arr + params.phase_offset
-            # 接触相：sin(φ) < threshold（由占空比决定）
-            # duty_factor=0.5 → threshold=0 → sin(φ)<0 → 下半圆为支撑相
-            threshold = math.cos(math.pi * params.duty_factor)
-            in_contact = (np.sin(phi) < threshold).astype(float)
+            normalized_phase = np.mod(phi, 2.0 * np.pi) / (2.0 * np.pi)
+            in_contact = (normalized_phase < params.duty_factor).astype(float)
 
             # 推进力包络（支撑相时产生 forward 推力）
             # 简化：矩形包络，实际可用 smoothstep
@@ -241,7 +247,7 @@ class AsymmetricGaitOptimizer:
             leg_params, frequency_hz
         )
         reg = sum(
-            (p.phase_offset - base_params[lid].phase_offset) ** 2 +
+            circular_distance(p.phase_offset, base_params[lid].phase_offset) ** 2 +
             (p.duty_factor - base_params[lid].duty_factor) ** 2 * 4.0 +
             (p.stride_scale - base_params[lid].stride_scale) ** 2 * 2.0
             for lid, p in leg_params.items()
@@ -288,8 +294,23 @@ class AsymmetricGaitOptimizer:
                 p = params[lid]
 
                 # --- 优化相位偏移 ---
+                orig_phase = p.phase_offset
+                p.phase_offset = wrap_2pi(orig_phase + step)
+                obj_plus = self._objective(params, base_params, frequency_hz)
+                p.phase_offset = wrap_2pi(orig_phase - step)
+                obj_minus = self._objective(params, base_params, frequency_hz)
+                if obj_plus < prev_obj and obj_plus <= obj_minus:
+                    p.phase_offset = wrap_2pi(orig_phase + step)
+                    prev_obj = obj_plus
+                    improved = True
+                elif obj_minus < prev_obj:
+                    p.phase_offset = wrap_2pi(orig_phase - step)
+                    prev_obj = obj_minus
+                    improved = True
+                else:
+                    p.phase_offset = orig_phase
+
                 for attr, lo, hi, delta in [
-                    ("phase_offset", 0.0, 2 * math.pi, step),
                     ("duty_factor", 0.35, 0.75, step * 0.3),
                     ("stride_scale", 0.10, 0.90, step * 0.5),
                 ]:
@@ -348,31 +369,28 @@ def build_initial_leg_params(
     group_b = set(groups.get("group_b", []))
     group_c = set(groups.get("group_c", []))
 
-    cpg = gait_plan.get("cpg", {})
-    duty = float(cpg.get("duty_factor", 0.60))
     base_amps = {
         int(k): float(v)
         for k, v in topo.get("per_leg_stride_amplitudes", {}).items()
     }
 
     all_active = group_a | group_b | group_c
+    phase_offsets = resolve_phase_offsets(gait_plan, all_active)
+    duty_factors, _ = resolve_duty_factors(gait_plan, all_active)
     leg_params: Dict[int, LegGaitParams] = {}
 
     for lid in all_active:
         if lid in group_a:
             grp = 'a'
-            phase_off = 0.0
         elif lid in group_b:
             grp = 'b'
-            phase_off = math.pi
         else:
             grp = 'c'
-            phase_off = 0.0
 
         leg_params[lid] = LegGaitParams(
             leg_id=lid,
-            phase_offset=phase_off,
-            duty_factor=duty,
+            phase_offset=phase_offsets[lid],
+            duty_factor=duty_factors[lid],
             stride_scale=float(base_amps.get(lid, 0.5)),
             group=grp,
         )
@@ -499,6 +517,11 @@ def integrate_dynamic_symmetry(
     topo["per_leg_stride_amplitudes"] = per_leg_amps
     if "cpg" in gait_plan:
         gait_plan["cpg"]["phase_offsets"] = phase_offsets_opt
+        gait_plan["cpg"]["per_leg_duty_factors"] = {
+            str(lid): float(params.duty_factor)
+            for lid, params in leg_params.items()
+            if params.group in ('a', 'b')
+        }
 
     return DynamicSymmetryGaitPlan(
         base_plan=gait_plan,

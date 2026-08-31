@@ -14,6 +14,20 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+from adaptation.phase import (
+    build_phase_offsets,
+    clip_duty_factor,
+    resolve_duty_factors,
+    wrap_2pi,
+)
+from adaptation.gait_selector import (
+    CandidateSearchConfig,
+    GaitCandidate,
+    GaitFeasibilityConfig,
+    blend_and_validate_phase_switch,
+    select_gait_candidate,
+)
+
 try:
     from shapely.geometry import MultiPoint
     SHAPELY_AVAILABLE = True
@@ -120,8 +134,8 @@ def compute_adaptive_plan(
     # ---- support legs --------------------------------------------------------
     state_phases = state.get("phases", {})
     upcoming_stance = state.get("upcoming_stance_leg_ids", [])
-    locked_ids = state.get("locked_leg_ids", [])
-    missing_ids = state.get("missing_leg_ids", [])
+    locked_ids = {int(value) for value in state.get("locked_leg_ids", [])}
+    missing_ids = {int(value) for value in state.get("missing_leg_ids", [])}
 
     support_ids: List[int] = []
     near_stance_ids: List[int] = []
@@ -672,6 +686,14 @@ def compute_adaptive_plan(
             grp.remove(leg_to_demote)
             group_c.append(leg_to_demote)
 
+    # Locked legs remain physical load-bearing contacts but must never enter
+    # the active swing schedule.  Missing legs are omitted entirely.
+    locked_support_ids = sorted(
+        int(lid) for lid in locked_ids
+        if int(lid) in foot_xy and int(lid) not in missing_ids
+    )
+    group_c = sorted(set(group_c) | set(locked_support_ids))
+
     # ---- CoM offset pre-bias for stride amplitudes ---------------------------
     # When an external estimator (EKF) has identified a lateral CoM offset,
     # pre-scale the stride amplitudes BEFORE yaw torque compensation so that
@@ -836,10 +858,31 @@ def compute_adaptive_plan(
                       f"L={left_propulsion:.3f}  R={right_propulsion:.3f}  "
                       f"ratio={ratio:.2f}  net_yaw {net_yaw_nominal:+.4f}→{net_yaw_corrected:+.4f}")
 
-    # ---- CPG coupling matrix (geometry-aware) --------------------------------
+    # ---- CPG phase schedule and coupling matrix (geometry-aware) -------------
     cpg_cfg = state.get("cpg", {}) if isinstance(state.get("cpg", {}), dict) else {}
-    freq_hz = float(cpg_cfg.get("frequency_hz", 0.85))
-    duty_factor = float(cpg_cfg.get("duty_factor", 0.60))
+    # Large irregular morphologies need a slower, higher-duty crawl so the
+    # executor has time to establish contact before another leg lifts.  Keep
+    # the proven tripod defaults for a regular six-leg robot, while allowing
+    # every value to be overridden by an experiment or a saved tuned plan.
+    active_count_for_defaults = len(group_a) + len(group_b)
+    if active_count_for_defaults >= 9:
+        # Large arbitrary morphologies use the moderate search baseline.  A
+        # high-duty binary candidate is evaluated separately by the batch
+        # selector; making it universal slowed several 11/14-leg wave gaits.
+        default_frequency_hz, default_duty_factor = 0.70, 0.72
+    elif active_count_for_defaults >= 7:
+        default_frequency_hz, default_duty_factor = 0.70, 0.72
+    elif active_count_for_defaults <= 4:
+        default_frequency_hz, default_duty_factor = 0.68, 0.72
+    elif active_count_for_defaults == 5:
+        default_frequency_hz, default_duty_factor = 0.76, 0.68
+    else:
+        default_frequency_hz, default_duty_factor = 0.85, 0.60
+    freq_hz = float(cpg_cfg.get("frequency_hz", default_frequency_hz))
+    requested_duty_factor = float(
+        cpg_cfg.get("duty_factor", default_duty_factor)
+    )
+    duty_factor, duty_was_clipped = clip_duty_factor(requested_duty_factor)
     coupling_gain = float(cpg_cfg.get("coupling_gain", 1.0))
     long_scale = float(cpg_cfg.get("longitudinal_scale", 0.35))
     lat_scale = float(cpg_cfg.get("lateral_scale", 0.25))
@@ -848,37 +891,301 @@ def compute_adaptive_plan(
 
     # fwd_axis / lat_axis already defined above (swing projection section)
 
-    n_legs = len(active_legs)
-    coupling = np.zeros((n_legs, n_legs), dtype=float)
-    phase_bias = np.zeros((n_legs, n_legs), dtype=float)
-
     group_a_set = set(group_a)
     group_b_set = set(group_b)
-    for i, lid_i in enumerate(active_legs):
-        for j, lid_j in enumerate(active_legs):
+    phase_active_legs = sorted(group_a_set | group_b_set)
+    phase_strategy = str(cpg_cfg.get("phase_strategy", "binary")).strip().lower()
+    configured_wave_count = cpg_cfg.get("wave_count", None)
+    if configured_wave_count is None and phase_strategy == "adaptive_wave":
+        requested_wave_count = 0.0
+    else:
+        requested_wave_count = float(configured_wave_count if configured_wave_count is not None else 1.0)
+    wave_direction = float(cpg_cfg.get("wave_direction", 1.0))
+    lateral_phase_lag = float(cpg_cfg.get("lateral_phase_lag", np.pi))
+    phase_offsets_int, selected_wave_count = build_phase_offsets(
+        strategy=phase_strategy,
+        foot_positions=foot_xy,
+        forward_axis=fwd_axis,
+        groups={"group_a": group_a, "group_b": group_b, "group_c": group_c},
+        active_leg_ids=phase_active_legs,
+        missing_leg_ids=missing_ids,
+        locked_leg_ids=locked_ids,
+        wave_count=requested_wave_count,
+        wave_direction=wave_direction,
+        lateral_phase_lag=lateral_phase_lag,
+        stability_margin=(
+            float(state["ssm"]) if state.get("ssm") is not None else None
+        ),
+    )
+    # A caller may provide a hand-tuned or previously optimized per-leg map.
+    # Preserve those entries exactly (modulo circular wrapping) instead of
+    # letting the selected strategy overwrite them.
+    configured_phase_offsets = cpg_cfg.get("phase_offsets", {})
+    if isinstance(configured_phase_offsets, dict):
+        for raw_leg_id, raw_offset in configured_phase_offsets.items():
+            try:
+                leg_id = int(raw_leg_id)
+                if leg_id in phase_active_legs:
+                    phase_offsets_int[leg_id] = wrap_2pi(float(raw_offset))
+            except (TypeError, ValueError):
+                continue
+    duty_plan_view = {
+        "cpg": {
+            "duty_factor": duty_factor,
+            "per_leg_duty_factors": cpg_cfg.get("per_leg_duty_factors", {}),
+        },
+    }
+    per_leg_duty_factors_int, duty_diagnostics = resolve_duty_factors(
+        duty_plan_view, phase_active_legs,
+    )
+    if duty_was_clipped and not any("cpg.duty_factor" in item for item in duty_diagnostics):
+        duty_diagnostics.insert(
+            0,
+            f"cpg.duty_factor clipped from {requested_duty_factor:.6g} to {duty_factor:.6g}",
+        )
+
+    selection_diagnostics: Optional[Dict] = None
+    selected_phase_strategy = phase_strategy
+    if phase_strategy == "adaptive_wave":
+        selector_cfg = (
+            cpg_cfg.get("selector", {})
+            if isinstance(cpg_cfg.get("selector", {}), dict) else {}
+        )
+        search_cfg = (
+            cpg_cfg.get("candidate_search", {})
+            if isinstance(cpg_cfg.get("candidate_search", {}), dict) else {}
+        )
+
+        def _search_values(name: str, defaults: Tuple[float, ...]) -> Tuple[float, ...]:
+            raw = search_cfg.get(name, defaults)
+            return tuple(float(value) for value in raw)
+
+        explicit_current = None
+        if isinstance(configured_phase_offsets, dict) and configured_phase_offsets:
+            explicit_current = GaitCandidate(
+                name="configured_current_plan",
+                strategy=str(cpg_cfg.get("current_phase_strategy", "binary")),
+                phase_offsets=dict(phase_offsets_int),
+                duty_factors=dict(per_leg_duty_factors_int),
+                wave_count=float(selected_wave_count),
+                lateral_phase_offset=lateral_phase_lag,
+            )
+        feasibility_config = GaitFeasibilityConfig(
+            samples_per_cycle=int(selector_cfg.get("samples_per_cycle", 360)),
+            minimum_ssm=float(selector_cfg.get("minimum_ssm", 0.0)),
+            minimum_stance_count=int(selector_cfg.get("minimum_stance_count", 3)),
+            allow_dynamic_support=bool(selector_cfg.get("allow_dynamic_support", False)),
+            maximum_phase_jump=float(selector_cfg.get("maximum_phase_jump", np.pi)),
+            minimum_adjacent_swing_spacing=float(
+                selector_cfg.get("minimum_adjacent_swing_spacing", 0.08)
+            ),
+        )
+        selection = select_gait_candidate(
+            active_leg_ids=phase_active_legs,
+            foot_positions=foot_xy,
+            com_xy=effective_com_xy,
+            forward_axis=fwd_axis,
+            groups={"group_a": group_a, "group_b": group_b, "group_c": group_c},
+            missing_leg_ids=missing_ids,
+            locked_leg_ids=locked_ids,
+            passive_leg_ids=group_c,
+            current_candidate=explicit_current,
+            feasibility_config=feasibility_config,
+            search_config=CandidateSearchConfig(
+                wave_counts=_search_values(
+                    "wave_counts", CandidateSearchConfig().wave_counts
+                ),
+                global_phase_origins=_search_values(
+                    "global_phase_origins", CandidateSearchConfig().global_phase_origins
+                ),
+                lateral_phase_offsets=_search_values(
+                    "lateral_phase_offsets", CandidateSearchConfig().lateral_phase_offsets
+                ),
+                duty_factors=_search_values(
+                    "duty_factors", CandidateSearchConfig().duty_factors
+                ),
+                wave_direction=wave_direction,
+            ),
+        )
+        selected = selection.candidate
+        selected_feasibility = selection.feasibility
+        transition_diagnostics = None
+        if explicit_current is not None and selected.name != explicit_current.name:
+            transition_cycles = max(int(selector_cfg.get("transition_cycles", 1)), 1)
+            transition_index = int(selector_cfg.get(
+                "transition_cycle_index", transition_cycles
+            ))
+            transition_alpha = float(selector_cfg.get(
+                "transition_alpha", transition_index / transition_cycles
+            ))
+            transition_alpha = float(np.clip(transition_alpha, 0.0, 1.0))
+            if transition_alpha < 1.0:
+                blended, blend_result = blend_and_validate_phase_switch(
+                    previous=explicit_current,
+                    target=selected,
+                    alpha=transition_alpha,
+                    active_leg_ids=phase_active_legs,
+                    foot_positions=foot_xy,
+                    com_xy=effective_com_xy,
+                    forward_axis=fwd_axis,
+                    missing_leg_ids=missing_ids,
+                    locked_leg_ids=locked_ids,
+                    passive_leg_ids=group_c,
+                    config=feasibility_config,
+                )
+                transition_diagnostics = {
+                    "requested_alpha": transition_alpha,
+                    "transition_cycles": transition_cycles,
+                    "transition_cycle_index": transition_index,
+                    "feasible": blend_result.feasible,
+                    "rejection_reasons": blend_result.rejection_reasons,
+                }
+                if blend_result.feasible:
+                    selected = blended
+                    selected_feasibility = blend_result
+                else:
+                    current, current_result = blend_and_validate_phase_switch(
+                        previous=explicit_current,
+                        target=selected,
+                        alpha=0.0,
+                        active_leg_ids=phase_active_legs,
+                        foot_positions=foot_xy,
+                        com_xy=effective_com_xy,
+                        forward_axis=fwd_axis,
+                        missing_leg_ids=missing_ids,
+                        locked_leg_ids=locked_ids,
+                        passive_leg_ids=group_c,
+                        config=feasibility_config,
+                    )
+                    if current_result.feasible:
+                        selected = current
+                        selected_feasibility = current_result
+                        transition_diagnostics["fallback"] = "kept_previous_plan"
+                    else:
+                        transition_diagnostics["fallback"] = (
+                            "selected_checked_target; previous_and_intermediate_infeasible"
+                        )
+        phase_offsets_int = dict(selected.phase_offsets)
+        per_leg_duty_factors_int = dict(selected.duty_factors)
+        selected_wave_count = selected.wave_count
+        lateral_phase_lag = selected.lateral_phase_offset
+        selected_phase_strategy = selected.strategy
+        if per_leg_duty_factors_int:
+            duty_factor = float(np.mean(list(per_leg_duty_factors_int.values())))
+        if selected.stride_scale_factor != 1.0:
+            for lid in phase_active_legs:
+                per_leg_stride_amplitudes[lid] = float(
+                    per_leg_stride_amplitudes.get(lid, 1.0)
+                    * selected.stride_scale_factor
+                )
+        if selected.strategy == "stop":
+            group_c = sorted(set(group_c) | set(phase_active_legs))
+            group_a = []
+            group_b = []
+            phase_active_legs = []
+        selection_diagnostics = {
+            "selection_mode": selection.selection_mode,
+            "selected_candidate": selected.name,
+            "selected_strategy": selected.strategy,
+            "score": selection.score,
+            "evaluated_candidates": selection.evaluated_candidates,
+            "feasible_candidates": selection.feasible_candidates,
+            "feasibility": selected_feasibility.to_dict(),
+            "candidate_summaries": selection.candidate_summaries,
+            "metric_scope": "static_and_kinematic_proxies_only",
+            "phase_transition": transition_diagnostics,
+        }
+
+    leg_phase_offsets = {
+        str(lid): float(wrap_2pi(offset))
+        for lid, offset in phase_offsets_int.items()
+    }
+
+    raw_contact_feedback = cpg_cfg.get("contact_feedback", {})
+    if not isinstance(raw_contact_feedback, dict):
+        raw_contact_feedback = {}
+    default_maximum_swing = (
+        3 if active_count_for_defaults <= 6
+        else max(1, min(3, int(math.ceil(active_count_for_defaults * 0.18))))
+    )
+    contact_feedback = {
+        "enabled": bool(raw_contact_feedback.get("enabled", True)),
+        "gate_liftoff": bool(raw_contact_feedback.get("gate_liftoff", False)),
+        "minimum_support_count": int(raw_contact_feedback.get(
+            "minimum_support_count", 3 if active_count_for_defaults <= 6 else 4,
+        )),
+        "maximum_simultaneous_swing": int(raw_contact_feedback.get(
+            "maximum_simultaneous_swing", default_maximum_swing,
+        )),
+        "swing_start_window": float(raw_contact_feedback.get(
+            "swing_start_window", 0.35,
+        )),
+        "early_touchdown_progress": float(raw_contact_feedback.get(
+            "early_touchdown_progress", 0.35,
+        )),
+        "stance_search_ratio": float(raw_contact_feedback.get(
+            "stance_search_ratio", 0.07,
+        )),
+        "stance_search_steps": int(raw_contact_feedback.get(
+            "stance_search_steps", 18,
+        )),
+        "latch_stance_search": bool(raw_contact_feedback.get(
+            "latch_stance_search", False,
+        )),
+        "stance_search_release_steps": int(raw_contact_feedback.get(
+            "stance_search_release_steps", 144,
+        )),
+        "emergency_contact_recovery": bool(raw_contact_feedback.get(
+            "emergency_contact_recovery", False,
+        )),
+        "emergency_support_count": int(raw_contact_feedback.get(
+            "emergency_support_count", 3,
+        )),
+    }
+
+    # Matrices use an explicit leg order and include disabled physical legs so
+    # their incident edges can be demonstrably zeroed and reported.
+    coupling_leg_ids = sorted(int(lid) for lid in foot_xy)
+    n_coupling_legs = len(coupling_leg_ids)
+    coupling = np.zeros((n_coupling_legs, n_coupling_legs), dtype=float)
+    phase_bias = np.zeros((n_coupling_legs, n_coupling_legs), dtype=float)
+    phase_active_set = set(phase_active_legs)
+    zeroed_edges: List[Dict] = []
+    for i, lid_i in enumerate(coupling_leg_ids):
+        for j, lid_j in enumerate(coupling_leg_ids):
             if i == j:
+                continue
+            if lid_i not in phase_active_set or lid_j not in phase_active_set:
+                if i < j:
+                    reasons = []
+                    for lid in (lid_i, lid_j):
+                        if lid in missing_ids:
+                            reasons.append(f"leg_{lid}:missing")
+                        elif lid in locked_ids:
+                            reasons.append(f"leg_{lid}:locked")
+                        elif lid in group_c:
+                            reasons.append(f"leg_{lid}:passive")
+                    zeroed_edges.append({
+                        "leg_i": int(lid_i),
+                        "leg_j": int(lid_j),
+                        "reason": ",".join(reasons) or "inactive",
+                    })
                 continue
             delta = foot_xy[lid_j] - foot_xy[lid_i]
             d_long = float(np.dot(delta, fwd_axis))
             d_lat = float(np.dot(delta, lat_axis))
             w = math.exp(-0.5 * ((d_long / long_scale) ** 2 + (d_lat / lat_scale) ** 2))
             coupling[i, j] = coupling_gain * w
-            if (lid_i in group_a_set and lid_j in group_b_set) or (lid_i in group_b_set and lid_j in group_a_set):
-                phase_bias[i, j] = float(np.pi)
+            phase_bias[i, j] = wrap_2pi(
+                phase_offsets_int[lid_j] - phase_offsets_int[lid_i]
+            )
 
-    leg_phase_offsets: Dict[str, float] = {}
-    if standard_tripod:
+    if selected_phase_strategy == "stop":
+        gait_mode = "stop"
+    elif standard_tripod:
         gait_mode = "tripod"
-        duty_factor = max(duty_factor, 0.55)
-        for lid in active_legs:
-            leg_phase_offsets[str(lid)] = float(np.pi if lid in group_b_set else 0.0)
     else:
-        # Unequal alternating groups keep propulsion coherent.  The executor's
-        # duty-factor waveform provides a stance overlap around transitions.
         gait_mode = "alternating"
-        duty_factor = max(duty_factor, 0.60)
-        for lid in active_legs:
-            leg_phase_offsets[str(lid)] = float(np.pi if lid in group_b_set else 0.0)
 
     # ---- inhibition rules ----------------------------------------------------
     inhibition_rules: List[Dict] = []
@@ -908,6 +1215,8 @@ def compute_adaptive_plan(
     # ---- planned swings ------------------------------------------------------
     planned_swings: Dict[str, Dict] = {}
     for lid in foot_xy:
+        if lid in missing_ids:
+            continue
         v_raw = user_swings.get(str(lid))
         if v_raw is not None:
             v = np.asarray(v_raw, dtype=float)[:2]
@@ -960,15 +1269,55 @@ def compute_adaptive_plan(
         },
         "cpg": {
             "mode": gait_mode,
-            "active_leg_ids": active_legs,
+            "phase_strategy": phase_strategy,
+            "selected_phase_strategy": selected_phase_strategy,
+            "active_leg_ids": phase_active_legs,
             "phase_offsets": leg_phase_offsets,
+            "per_leg_duty_factors": {
+                str(lid): float(value)
+                for lid, value in per_leg_duty_factors_int.items()
+            },
             "coupling_weights": coupling.tolist(),
             "coupling_phase_bias": phase_bias.tolist(),
+            "coupling_leg_ids": coupling_leg_ids,
             "frequency_hz": freq_hz,
             "omega": float(2.0 * np.pi * freq_hz),
             "duty_factor": duty_factor,
+            "duty_factor_requested": requested_duty_factor,
+            "duty_factor_diagnostics": duty_diagnostics,
+            "wave_count": selected_wave_count,
+            "wave_direction": wave_direction,
+            "stride_direction": float(cpg_cfg.get(
+                "stride_direction", -1.0 if active_count_for_defaults >= 7 else 1.0,
+            )),
+            "swing_sign_mode": str(cpg_cfg.get(
+                "swing_sign_mode",
+                "kinematic_jacobian" if active_count_for_defaults >= 7 else "legacy_side",
+            )),
+            "stance_calibration_blend": float(
+                np.clip(cpg_cfg.get("stance_calibration_blend", 0.35), 0.0, 1.0)
+            ),
+            "touchdown_settle_steps": max(
+                int(cpg_cfg.get(
+                    "touchdown_settle_steps",
+                    0 if active_count_for_defaults >= 7 else 25,
+                )), 0,
+            ),
+            "touchdown_vertical_reset": float(np.clip(
+                cpg_cfg.get("touchdown_vertical_reset", 0.35), 0.0, 1.0,
+            )),
+            "reset_contact_calibration": bool(
+                cpg_cfg.get("reset_contact_calibration", len(active_legs) >= 7)
+            ),
+            "reset_maximum_stance_extension": float(np.clip(
+                cpg_cfg.get("reset_maximum_stance_extension", 0.06),
+                0.0, 0.15,
+            )),
+            "lateral_phase_lag": lateral_phase_lag,
             "longitudinal_scale": long_scale,
             "lateral_scale": lat_scale,
+            "selection_diagnostics": selection_diagnostics,
+            "contact_feedback": contact_feedback,
         },
         "impedance": {
             "space": str(state.get("impedance", {}).get("space", "joint")),
@@ -985,7 +1334,7 @@ def compute_adaptive_plan(
             "per_leg_stride_amplitudes": {str(lid): per_leg_stride_amplitudes.get(lid, 1.0)
                                           for lid in active_legs},
             "inhibition_rules": inhibition_rules,
-            "coupling_matrix_zeroed_edges": [],
+            "coupling_matrix_zeroed_edges": zeroed_edges,
         },
     }
     return plan

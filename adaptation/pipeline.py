@@ -20,8 +20,8 @@ iterative_improve.py 在每次迭代前会将本文件快照至
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass, asdict
-from typing import Dict, Tuple
+from dataclasses import dataclass, asdict, field
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 
@@ -59,6 +59,14 @@ class PipelineConfig:
     topo_max_legs: int = 9             # 仅对腿数在 [min, max] 范围内使用 Topo
     topo_score_threshold: float = 0.80 # 仅对 sym_score < 此值的机器人启用 Topo
 
+    # ── Phase scheduling (binary remains backward-compatible default) ────────
+    phase_strategy: str = "binary"
+    duty_factor: float = 0.60
+    wave_count: float = 1.0
+    wave_direction: float = 1.0
+    lateral_phase_lag: float = float(np.pi)
+    per_leg_duty_factors: Dict[str, float] = field(default_factory=dict)
+
 
 # 开箱即用的默认配置
 DEFAULT_CONFIG = PipelineConfig(
@@ -74,6 +82,7 @@ DEFAULT_CONFIG = PipelineConfig(
 def build_gait_plan(
     description: Dict,
     config: PipelineConfig = DEFAULT_CONFIG,
+    state: Optional[Dict] = None,
 ) -> Tuple[Dict, str, float, Dict]:
     """
     根据机器人描述和配置构建步态计划。
@@ -108,7 +117,15 @@ def build_gait_plan(
     num_legs = int(description.get("num_legs", 6))
 
     # ── Step 1: 基础 baseline 计划 ─────────────────────────────────────────
-    plan = compute_adaptive_plan(description, {})
+    planner_state = copy.deepcopy(state or {})
+    cpg_state = planner_state.setdefault("cpg", {})
+    cpg_state.setdefault("phase_strategy", config.phase_strategy)
+    cpg_state.setdefault("duty_factor", config.duty_factor)
+    cpg_state.setdefault("wave_count", config.wave_count)
+    cpg_state.setdefault("wave_direction", config.wave_direction)
+    cpg_state.setdefault("lateral_phase_lag", config.lateral_phase_lag)
+    cpg_state.setdefault("per_leg_duty_factors", dict(config.per_leg_duty_factors))
+    plan = compute_adaptive_plan(description, planner_state)
     base_per_amp: Dict[str, float] = {
         str(k): float(v)
         for k, v in plan["topology"].get("per_leg_stride_amplitudes", {}).items()
@@ -126,6 +143,7 @@ def build_gait_plan(
         "num_legs": num_legs,
         "sym_score_initial": round(sym_score, 4),
         "config_name": config.name,
+        "phase_strategy": plan.get("cpg", {}).get("phase_strategy", "binary"),
     }
 
     # ── Step 3: 对称性门控 — 得分够高则直接用 baseline ──────────────────
@@ -148,7 +166,7 @@ def build_gait_plan(
             and config.topo_min_legs <= num_legs <= config.topo_max_legs
             and sym_score < config.topo_score_threshold):
         try:
-            plan_topo = zero_shot_gait_plan(description)
+            plan_topo = zero_shot_gait_plan(description, state=planner_state)
             _tag = (f"topo: legs={num_legs}∈[{config.topo_min_legs},{config.topo_max_legs}],"
                     f" score={sym_score:.3f}<{config.topo_score_threshold}")
             print(f"[Pipeline:{config.name}] {_tag}")

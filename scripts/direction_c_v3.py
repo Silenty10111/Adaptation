@@ -42,6 +42,7 @@ sys.path.insert(0, str(_REPO))
 from adaptation.utils import compute_metrics
 from adaptation.gait import compute_adaptive_plan
 from adaptation.sim import _RobotSimCtx
+from adaptation.phase import leg_phase_state, resolve_duty_factors, resolve_phase_offsets
 
 _DT = 1.0 / 60.0
 PROBE_STEPS = 480
@@ -163,8 +164,6 @@ def run_episode_integral_yaw(
     lat = np.array([-fwd[1], fwd[0]], dtype=float)
 
     topo = plan["topology"]
-    group_a = topo["groups"]["group_a"]
-    group_b = topo["groups"]["group_b"]
     group_c = topo["groups"].get("group_c", [])
     base_amps = {str(k): float(v) for k, v in topo.get("per_leg_stride_amplitudes", {}).items()}
 
@@ -211,6 +210,11 @@ def run_episode_integral_yaw(
         return t * t * (3.0 - 2.0 * t)
 
     from adaptation.sim import GAIT_FREQUENCY, SWING_AMP
+    phase_offsets = resolve_phase_offsets(plan, ctx.triplets)
+    duty_factors, duty_diagnostics = resolve_duty_factors(plan, ctx.triplets)
+    for diagnostic in duty_diagnostics:
+        print(f"[IntegralYaw] {diagnostic}")
+    gait_frequency = float(plan.get("cpg", {}).get("frequency_hz", GAIT_FREQUENCY))
     _sl, _swl, _sd, _swd = ctx._sl, ctx._swl, ctx._sd, ctx._swd
 
     com_trail: List[List[float]] = []
@@ -220,12 +224,15 @@ def run_episode_integral_yaw(
     last_diag = {}
 
     for step in range(n_steps):
-        phase_now = 2.0 * math.pi * GAIT_FREQUENCY * sim_time
+        phase_now = 2.0 * math.pi * gait_frequency * sim_time
         targets = ctx.stand_ev.copy()
 
-        sw = math.sin(phase_now)
-        stance_group = group_b if sw > 0 else group_a
-        stance_legs = [lid for lid in stance_group if lid not in group_c]
+        stance_legs = [
+            lid for lid in ctx.triplets
+            if lid not in group_c and leg_phase_state(
+                phase_now, lid, phase_offsets, duty_factors
+            ).is_stance
+        ]
 
         yaw_now = yaw_acc[-1] if yaw_acc else 0.0
         corrected_amps = yaw_ctrl.step(yaw_now, stance_legs, base_amps)
@@ -237,15 +244,11 @@ def run_episode_integral_yaw(
                 targets[j["swing_idx"]] = _rtj(j["swing_lower"], j["swing_upper"], 0.5)
                 continue
 
-            if lid in group_b:
-                lg_ph = phase_now + math.pi
-            elif lid in group_a:
-                lg_ph = phase_now
-            else:
-                lg_ph = 0.0
-
-            sw_val = float(math.sin(lg_ph))
-            alpha = _ss(-0.30, 0.30, sw_val)
+            phase_state = leg_phase_state(
+                phase_now, lid, phase_offsets, duty_factors
+            )
+            sw_val = phase_state.fore_aft
+            alpha = phase_state.lift
             fv = ctx.fmap.get(lid, np.zeros(2))
             dsign = -1.0 if float(np.dot(fv, lat)) > 0.0 else 1.0
             eff_amp = SWING_AMP * float(corrected_amps.get(str(lid), base_amps.get(str(lid), 1.0)))
@@ -254,7 +257,7 @@ def run_episode_integral_yaw(
             dr = _sd + (_swd - _sd) * alpha
             sr = 0.5 + eff_amp * dsign * sw_val
 
-            is_sw = sw_val > 0.0
+            is_sw = not phase_state.is_stance
             if not is_sw:
                 if lid in touchdown_ramp:
                     touchdown_ramp[lid] += 1

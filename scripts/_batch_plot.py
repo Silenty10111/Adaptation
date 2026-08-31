@@ -13,6 +13,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+
+from adaptation.gait_visualization import build_planned_gait_raster
+
 
 def project_to_path_frame(com_trail, forward_axis):
     """Project world XY samples into (lateral, commanded-forward) coordinates."""
@@ -28,6 +33,83 @@ def project_to_path_frame(com_trail, forward_axis):
     lat = np.array([-fwd[1], fwd[0]], dtype=float)
     delta = trail[:, :2] - trail[0, :2]
     return delta @ lat, delta @ fwd, fwd, lat
+
+
+def _time_extent(time_s):
+    if len(time_s) <= 1:
+        return 0.0, 1.0
+    return float(time_s[0]), float(time_s[-1] + (time_s[1] - time_s[0]))
+
+
+def render_gait_visuals(data, trajectory_path):
+    """Render one planned-target heatmap with separate left/right panels."""
+    gait_plan = data.get("gait_plan")
+    if not isinstance(gait_plan, dict):
+        return []
+    trail_count = len(data.get("com_trail", []))
+    duration_s = float(data.get("gait_duration_s", max(trail_count / 60.0, 2.0)))
+    raster = build_planned_gait_raster(
+        data["description"], gait_plan, duration_s=duration_s,
+    )
+    raster["plan_source"] = data.get("gait_plan_source", "executed_final_plan")
+    raster["robot_name"] = data["robot_name"]
+    metadata_path = trajectory_path.with_name("gait_visualization.json")
+    metadata_path.write_text(json.dumps(raster, ensure_ascii=False), encoding="utf-8")
+
+    leg_ids = list(raster["leg_ids"])
+    if not leg_ids:
+        return []
+    labels = [
+        f"Leg {leg_id} ({group})"
+        for leg_id, group in zip(leg_ids, raster["group_labels"])
+    ]
+    time_s = np.asarray(raster["time_s"], dtype=float)
+    x0, x1 = _time_extent(time_s)
+    strategy = raster["selected_phase_strategy"]
+    source = raster["plan_source"]
+
+    heatmap_path = trajectory_path.with_name("gait_heatmap.png")
+    values = np.asarray(raster["swing_joint_target_delta_rad"], dtype=float)
+    side_labels = list(raster["side_labels"])
+    side_rows = {
+        side: [index for index, value in enumerate(side_labels) if value == side]
+        for side in ("left", "right")
+    }
+    nonempty_sides = [side for side in ("left", "right") if side_rows[side]]
+    fig, axes = plt.subplots(
+        max(len(nonempty_sides), 1), 1,
+        figsize=(13, max(5.5, 0.62 * len(leg_ids) + 2.5)), sharex=True,
+        squeeze=False, constrained_layout=True,
+    )
+    limit = max(float(np.max(np.abs(values))), 1e-6)
+    heatmap_image = None
+    for plot_index, side in enumerate(nonempty_sides):
+        ax = axes[plot_index, 0]
+        rows = side_rows[side]
+        side_values = values[rows]
+        side_labels_for_ticks = [labels[index] for index in rows]
+        side_extent = [x0, x1, len(rows) - 0.5, -0.5]
+        heatmap_image = ax.imshow(
+            side_values, aspect="auto", interpolation="nearest", origin="upper",
+            extent=side_extent, cmap="coolwarm", vmin=-limit, vmax=limit,
+        )
+        ax.set_yticks(range(len(rows)), labels=side_labels_for_ticks, fontsize=8)
+        ax.set_ylabel("Leg")
+        ax.set_title(f"{side.capitalize()} legs", fontsize=10)
+    if heatmap_image is not None:
+        fig.colorbar(
+            heatmap_image, ax=axes[:len(nonempty_sides), 0].tolist(), pad=0.012,
+            label="Planned swing-joint deviation from neutral (rad)",
+        )
+    axes[len(nonempty_sides) - 1, 0].set_xlabel("Simulation time (s)")
+    fig.suptitle(
+        f"Left/right planned leg-angle heatmap — {data['robot_name']}\n"
+        f"strategy={strategy}; source={source}; not measured DOF states",
+        fontsize=12,
+    )
+    fig.savefig(heatmap_path, dpi=160, bbox_inches="tight")
+    plt.close(fig)
+    return [heatmap_path, metadata_path]
 
 
 def main():
@@ -143,6 +225,8 @@ def main():
     fig.savefig(str(out_path), dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"[Plot] {out_path}")
+    for generated_path in render_gait_visuals(d, out_path):
+        print(f"[Plot] {generated_path}")
 
 
 if __name__ == "__main__":

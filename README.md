@@ -52,7 +52,10 @@ export ISAAC_PYTHON=/data/conda/envs/unitree-rl/bin/python
 export ISAAC_LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib
 export ADAPTATION_PYTHON=/data/conda/envs/Adaptation/bin/python
 
-# 3. 生成机器人
+# 3. 生成机器人（默认：0.90×0.32 m 细长主体，随机 8–14 条腿）
+python generate_geometry.py --seed 42
+
+# 显式覆盖仍可生成标准腿数或其他尺寸
 python generate_geometry.py --num-legs 6 --seed 42
 python generate_urdf.py
 
@@ -67,7 +70,19 @@ LD_LIBRARY_PATH=/data/conda/envs/unitree-rl/lib \
 python scripts/batch_test.py --num-robots 500 --execution-mode parallel
 ```
 
-批量测试固定保存可复现随机种子、机器人资产、1200 步根机身轨迹、统一直线匀速指标、每台 `trajectory.png`/`trajectory.json` 以及汇总 HTML。可使用 `--resume-dir PATH` 复用已生成资产，避免长批次重新生成几何。
+批量测试固定保存可复现随机种子、机器人资产、1200 步根机身轨迹、统一直线匀速指标，以及每台机器人的：
+
+- `trajectory.png` / `trajectory.json`：实际根机身路径与轨迹数据；
+- `gait_heatmap.png`：按实际足端几何分成左、右两张子图的摆动关节目标热力图；
+- `gait_visualization.json`：相位、占空比和绘图栅格原始数据。
+
+热力图是控制器目标，不是实测 DOF 状态，图标题和 JSON 中会明确标注。支撑相和摆动相仍保留在 JSON 原始数据中，但不再单独绘图。汇总 HTML 可直接放大查看路径图和左右腿热力图。可使用 `--resume-dir PATH` 复用已生成资产，避免长批次重新生成几何。
+
+旧批次没有保存最终探测计划或实测关节轨迹，可根据已保存构型和行走轴重建带来源标记的计划图：
+
+```bash
+python scripts/generate_gait_visuals.py batch_results/20260818_131804
+```
 
 ### 在 Isaac Gym Viewer 中查看指定机器人
 
@@ -126,7 +141,7 @@ python scripts/validate_locomotion.py --stage arbitrary --arbitrary-count 5 \
 - `SSM` = min_i( cross(V_{i+1} - V_i, P - V_i) / |V_{i+1} - V_i| )
 - SSM > 0 → 稳定，SSM ≤ 0 → 不稳定
 
-两道门控：`generate_geometry.py` 预检（生成前）+ `generate_urdf.py` 备用检查（导出前）。设 `STRICT_SSM=1` 强制 SSM 失败时中止 URDF 导出。
+两道门控：`generate_geometry.py` 预检（生成前）+ `generate_urdf.py` 备用检查（导出前）。SSM 失败默认中止；只有显式 `--allow-unstable` 才输出诊断资产。
 
 详见 `stability.py`。
 
@@ -224,3 +239,40 @@ png/                   # 可视化图片/PDF
 # 单元测试（Adaptation 环境）
 python -m pytest tests/ -v
 ```
+# 最新闭环步态验证流程（2026-08）
+
+任意构型不再只使用“左右两组相差 π”的固定逻辑。当前批测入口会在
+`binary`、`hildebrand`、`uniform_wave`、`balanced_wave` 和几何波候选间
+比较，并在 JSON 的 `selected_by_case` 中记录优胜策略。轨迹通过和严格接触
+安全通过是两个独立字段，禁止把前者写成完整安全成功。
+
+推荐的任意构型验证命令（结果和所有图片均位于 `batch_results`）：
+
+```bash
+PYTHONPATH=. python scripts/phase_strategy_compare.py \
+  --models-root batch_results/generation_coplanar_8 \
+  --steps 600 --calibrate-course --calibration-probe-steps 600 \
+  --swing-sign-mode kinematic_jacobian --stride-direction -1 \
+  --touchdown-settle-steps 0 --disable-emergency-contact-recovery \
+  --strategies binary hildebrand uniform_wave balanced_wave \
+  --output batch_results/phase_selection/result.json \
+  --artifacts-dir batch_results/phase_selection/artifacts
+```
+
+对接触失配较高的优胜策略，再增加一次 `--latch-stance-search` 候选；该滞回
+补偿只应由新确认回合择优，不能全局强制开启（当前样本中 seed 19/23 会退化）。
+
+探测与确认使用两个全新的 PhysX 上下文，避免接触求解器历史状态污染复位后
+的结果。`final_forward_axis` 表示实测稳定运动方向；
+`actuation_forward_axis` 保留生成摆动符号和腿序的原形态轴，因此航向标定不会
+暗中重建另一套步态。
+
+当前汇总报告可重新生成：
+
+```bash
+python scripts/build_final_iteration_report.py
+```
+
+输出包括 `batch_results/final_iteration_summary/summary.json`、嵌图 HTML 和固定
+A4 横向版式 PDF。热力图按左腿、右腿分成两个面板，显示的是规划摆动关节目标，
+不是 Isaac Gym 实测 DOF 状态。

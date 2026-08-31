@@ -21,6 +21,8 @@ from typing import Dict, List
 
 import numpy as np
 
+from adaptation.phase import leg_phase_state, resolve_duty_factors, resolve_phase_offsets
+
 
 TARGET_PYTHON = "/data/conda/envs/unitree-rl/bin/python"
 TARGET_LD_PATH = "/data/conda/envs/unitree-rl/lib"
@@ -229,15 +231,6 @@ def get_body_attitude(gym, env, actor, gymapi) -> tuple:
 # Gait control
 # ---------------------------------------------------------------------------
 
-def leg_group_phase(leg_id: int, group_a: List[int], group_b: List[int],
-                    base_phase: float) -> float:
-    if leg_id in group_b:
-        return base_phase + float(np.pi)
-    if leg_id in group_a:
-        return base_phase
-    return base_phase
-
-
 def diagnose_gait(frame_count: int, triplets: Dict[int, dict], gait_plan: dict, 
                   phase: float, group_a: List[int], group_b: List[int],
                   dof_states = None, dof_names = None) -> None:
@@ -248,6 +241,8 @@ def diagnose_gait(frame_count: int, triplets: Dict[int, dict], gait_plan: dict,
     topo = gait_plan.get("topology", {})
     group_c = topo.get("groups", {}).get("group_c", [])
     sw_proj = topo.get("swing_projections", {})
+    phase_offsets = resolve_phase_offsets(gait_plan, triplets)
+    duty_factors, _ = resolve_duty_factors(gait_plan, triplets)
 
     print(f"\n[Gait Diag @ frame {frame_count}] 相位={phase/(2*np.pi):.2f} cycles")
     print(f"  group_a (摆腿): {group_a}  group_b (摆腿): {group_b}  group_c (静止): {group_c}")
@@ -266,10 +261,9 @@ def diagnose_gait(frame_count: int, triplets: Dict[int, dict], gait_plan: dict,
             print(f"    leg_{leg_id}: group_{label}, proj={proj:+.2f}{actual_str}")
             continue
 
-        lg_phase = leg_group_phase(leg_id, group_a, group_b, phase)
-        swing_wave = float(np.sin(lg_phase))
-        swing_alpha = smoothstep(-0.10, 0.10, swing_wave)
-        in_swing = swing_alpha > 0.5
+        leg_state = leg_phase_state(phase, leg_id, phase_offsets, duty_factors)
+        swing_alpha = leg_state.lift
+        in_swing = not leg_state.is_stance
         state = "摆" if in_swing else "支"
         group = "A" if leg_id in group_a else "B"
         
@@ -280,7 +274,7 @@ def diagnose_gait(frame_count: int, triplets: Dict[int, dict], gait_plan: dict,
             lift_pos = dof_states["pos"][triplet["lift_idx"]]
             actual_str = f" [实际: swing={swing_pos:.3f}, lift={lift_pos:.3f}]"
         
-        print(f"    leg_{leg_id}: group_{group}, proj={proj:+.2f}, phase={lg_phase/(np.pi):.2f}π, " +
+        print(f"    leg_{leg_id}: group_{group}, proj={proj:+.2f}, phase={leg_state.phase/(np.pi):.2f}π, " +
               f"α={swing_alpha:.3f}, state={state}{actual_str}")
 
 
@@ -336,6 +330,12 @@ def build_gait_targets(
     group_b = list(topo.get("groups", {}).get("group_b", []))
     # group_c: passive legs with low forward-projection contribution (just stay neutral)
     group_c = list(topo.get("groups", {}).get("group_c", []))
+    phase_offsets = resolve_phase_offsets(gait_plan, triplets)
+    duty_factors, duty_diagnostics = resolve_duty_factors(gait_plan, triplets)
+    if duty_diagnostics and not getattr(build_gait_targets, "_reported_duty_clips", False):
+        for diagnostic in duty_diagnostics:
+            print(f"[Gait] {diagnostic}")
+        build_gait_targets._reported_duty_clips = True
     # Per-leg swing projection onto forward axis (0.0–1.0)
     swing_projections: dict = topo.get("swing_projections", {})
 
@@ -396,11 +396,10 @@ def build_gait_targets(
                     updated_props["damping"][idx]   = float(passive_kd)
             continue
 
-        # ---- ACTIVE groups (group_a / group_b) ----------------------------------
-        lg_phase = leg_group_phase(leg_id, group_a, group_b, phase)
-        swing_wave = float(np.sin(lg_phase))
-        # Sharp transition (edge ±0.10) reduces simultaneous lift-off
-        swing_alpha = smoothstep(-0.10, 0.10, swing_wave)
+        # ---- ACTIVE legs: shared per-leg phase and true duty schedule ------------
+        leg_state = leg_phase_state(phase, leg_id, phase_offsets, duty_factors)
+        swing_wave = leg_state.fore_aft
+        swing_alpha = leg_state.lift
 
         # Modification 2: project swing amplitude onto per-leg stride axis.
         # swing_projection ≈ 1.0 for laterally-mounted legs,
@@ -803,9 +802,12 @@ def main() -> int:
 
                 # 2. Per-leg foot-position markers coloured by group & phase
                 phase_now = 2.0 * np.pi * args.gait_frequency * sim_time
+                phase_offsets = resolve_phase_offsets(gait_plan, triplets)
+                duty_factors, _ = resolve_duty_factors(gait_plan, triplets)
                 for leg_id, joints in triplets.items():
-                    lg_ph = leg_group_phase(leg_id, group_a, group_b, phase_now)
-                    in_swing = float(np.sin(lg_ph)) > 0.0
+                    in_swing = not leg_phase_state(
+                        phase_now, leg_id, phase_offsets, duty_factors
+                    ).is_stance
                     ft_idx = foot_body_ids.get(leg_id)
                     if body_states is not None and ft_idx is not None and ft_idx < len(body_states):
                         p = body_states["pose"]["p"][ft_idx]

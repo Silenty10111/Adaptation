@@ -34,6 +34,12 @@ sys.path.insert(0, str(_REPO))
 from adaptation.utils import compute_metrics
 from adaptation.gait import compute_adaptive_plan
 from adaptation.sim import _RobotSimCtx
+from adaptation.phase import (
+    leg_phase_state,
+    resolve_duty_factors,
+    resolve_phase_offsets,
+    yaw_rate_error,
+)
 
 _DT = 1.0 / 60.0
 
@@ -91,7 +97,7 @@ class YawCancelController:
             self.yaw_levers[lid] = math.hypot(rx, ry)
 
         # 状态
-        self._prev_yaw_rate = 0.0
+        self._prev_yaw_error = 0.0
         self._ema_amps: Dict[int, float] = {}  # EMA 平滑后的修正量
         self._correction_strength = 1.0        # 自适应修正强度
         self._yaw_history: List[float] = []     # 最近的偏航率历史
@@ -102,6 +108,7 @@ class YawCancelController:
         yaw_rate: float,
         stance_legs: List[int],
         base_amps: Dict[str, float],
+        yaw_rate_ref: float = 0.0,
     ) -> Dict[str, float]:
         """每步调用，返回修正后的 per-leg stride amplitudes。
 
@@ -114,17 +121,18 @@ class YawCancelController:
             {"0": 1.05, ...}  修正后的 amplitudes
         """
         self._step_count += 1
-        self._yaw_history.append(yaw_rate)
+        error = yaw_rate_error(yaw_rate, yaw_rate_ref)
+        self._yaw_history.append(error)
         if len(self._yaw_history) > 120:
             self._yaw_history.pop(0)
 
         # ── 1. 计算偏航加速度（微分项）────────────────────────────────
-        yaw_accel = (yaw_rate - self._prev_yaw_rate) / _DT
-        self._prev_yaw_rate = yaw_rate
+        yaw_accel = (error - self._prev_yaw_error) / _DT
+        self._prev_yaw_error = error
 
         # ── 2. 计算抵消力矩 ──────────────────────────────────────────
         # τ_cancel = Izz * (kp * yaw_rate + kd * yaw_accel)
-        tau_cancel = self.Izz * (self.kp * yaw_rate + self.kd * yaw_accel)
+        tau_cancel = self.Izz * (self.kp * error + self.kd * yaw_accel)
         # 钳制避免极端值
         tau_cancel = float(np.clip(tau_cancel, -50.0, 50.0))
 
@@ -208,8 +216,6 @@ def run_episode_yaw_closed_loop(
     lat = np.array([-fwd[1], fwd[0]], dtype=float)
 
     topo = plan["topology"]
-    group_a = topo["groups"]["group_a"]
-    group_b = topo["groups"]["group_b"]
     group_c = topo["groups"].get("group_c", [])
 
     base_amps = {str(k): float(v) for k, v in topo.get("per_leg_stride_amplitudes", {}).items()}
@@ -262,6 +268,11 @@ def run_episode_yaw_closed_loop(
         return t * t * (3.0 - 2.0 * t)
 
     from adaptation.sim import GAIT_FREQUENCY, SWING_AMP, BODY_HEIGHT
+    phase_offsets = resolve_phase_offsets(plan, ctx.triplets)
+    duty_factors, duty_diagnostics = resolve_duty_factors(plan, ctx.triplets)
+    for diagnostic in duty_diagnostics:
+        print(f"[YawClosedLoop] {diagnostic}")
+    gait_frequency = float(plan.get("cpg", {}).get("frequency_hz", GAIT_FREQUENCY))
     _sl, _swl, _sd, _swd = ctx._sl, ctx._swl, ctx._sd, ctx._swd
 
     com_trail: List[List[float]] = []
@@ -271,16 +282,16 @@ def run_episode_yaw_closed_loop(
     all_diag: List[Dict] = []
 
     for step in range(n_steps):
-        phase_now = 2.0 * math.pi * GAIT_FREQUENCY * sim_time
+        phase_now = 2.0 * math.pi * gait_frequency * sim_time
         targets = ctx.stand_ev.copy()
 
         # ── 确定当前支撑腿 ──────────────────────────────────────────
-        sw = math.sin(phase_now)
-        if sw > 0:
-            stance_group = group_b  # group_a 在摆动
-        else:
-            stance_group = group_a  # group_b 在摆动
-        stance_legs = [lid for lid in stance_group if lid not in group_c]
+        stance_legs = [
+            lid for lid in ctx.triplets
+            if lid not in group_c and leg_phase_state(
+                phase_now, lid, phase_offsets, duty_factors
+            ).is_stance
+        ]
 
         # ── 从偏航闭环控制器获取修正 ─────────────────────────────────
         # 使用上一步测量的 yaw_rate（本步读取后再用于下一步）
@@ -294,15 +305,11 @@ def run_episode_yaw_closed_loop(
                 targets[j["swing_idx"]] = _rtj(j["swing_lower"], j["swing_upper"], 0.5)
                 continue
 
-            if lid in group_b:
-                lg_ph = phase_now + math.pi
-            elif lid in group_a:
-                lg_ph = phase_now
-            else:
-                lg_ph = 0.0
-
-            sw_val = float(math.sin(lg_ph))
-            alpha = _ss(-0.30, 0.30, sw_val)
+            phase_state = leg_phase_state(
+                phase_now, lid, phase_offsets, duty_factors
+            )
+            sw_val = phase_state.fore_aft
+            alpha = phase_state.lift
             fv = ctx.fmap.get(lid, np.zeros(2))
             dsign = -1.0 if float(np.dot(fv, lat)) > 0.0 else 1.0
 
@@ -313,7 +320,7 @@ def run_episode_yaw_closed_loop(
             dr = _sd + (_swd - _sd) * alpha
             sr = 0.5 + eff_amp * dsign * sw_val
 
-            is_sw = sw_val > 0.0
+            is_sw = not phase_state.is_stance
             if not is_sw:
                 if lid in touchdown_ramp:
                     touchdown_ramp[lid] += 1

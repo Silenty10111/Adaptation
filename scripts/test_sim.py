@@ -4,15 +4,16 @@
 from __future__ import annotations
 
 import argparse
+import math
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
-import pybullet as p
-import pybullet_data
+
+p: Any = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -23,6 +24,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--spacing", type=float, default=2.0, help="模型在 X 轴上的摆放间距。")
     parser.add_argument("--variant-prefix", default="variant", help="模型命名前缀。")
     parser.add_argument("--no-generate", action="store_true", help="不重新生成，直接加载已有变体。")
+    parser.add_argument(
+        "--models-root", type=Path,
+        help="递归加载该目录中的 robot.urdf；适用于 batch_results 中的现有样例。",
+    )
+    parser.add_argument("--grid-columns", type=int, default=4, help="全部展示时的网格列数。")
+    parser.add_argument("--fixed-base", action="store_true", help="固定主体，进行纯静态结构展示。")
     parser.add_argument(
         "--show-all",
         action="store_true",
@@ -131,6 +138,33 @@ def find_existing_variants(prefix: str) -> List[Tuple[str, Path]]:
     return found
 
 
+def find_models_under(root: Path) -> List[Tuple[str, Path]]:
+    """Find generated sample URDFs recursively with stable display labels."""
+    resolved = root.expanduser().resolve()
+    if not resolved.is_dir():
+        raise FileNotFoundError(f"模型根目录不存在: {resolved}")
+    found: List[Tuple[str, Path]] = []
+    for urdf_path in sorted(resolved.rglob("robot.urdf")):
+        relative = urdf_path.relative_to(resolved)
+        label = relative.parts[0] if len(relative.parts) > 1 else urdf_path.parent.name
+        found.append((label, urdf_path.resolve()))
+    return found
+
+
+def grid_positions(count: int, spacing: float, columns: int) -> List[Tuple[float, float, float]]:
+    """Return a centred row-major layout for displaying every model at once."""
+    columns = max(1, min(int(columns), max(int(count), 1)))
+    rows = max(1, int(math.ceil(count / columns)))
+    positions: List[Tuple[float, float, float]] = []
+    for index in range(count):
+        column = index % columns
+        row = index // columns
+        x = (column - 0.5 * (columns - 1)) * spacing
+        y = (0.5 * (rows - 1) - row) * spacing
+        positions.append((float(x), float(y), 0.45))
+    return positions
+
+
 def lock_robot_joints(robot_id: int, hold_force: float = 50.0) -> None:
     num_joints = p.getNumJoints(robot_id)
     for joint_index in range(num_joints):
@@ -149,19 +183,33 @@ def set_robot_alpha(robot_id: int, alpha: float) -> None:
         p.changeVisualShape(robot_id, joint_index, rgbaColor=[1.0, 1.0, 1.0, alpha])
 
 
-def focus_camera(target_pos: Tuple[float, float, float]) -> None:
+def focus_camera(
+    target_pos: Tuple[float, float, float], distance: float = 2.8,
+    pitch: float = -25.0,
+) -> None:
     p.resetDebugVisualizerCamera(
-        cameraDistance=2.8,
+        cameraDistance=distance,
         cameraYaw=38.0,
-        cameraPitch=-25.0,
+        cameraPitch=pitch,
         cameraTargetPosition=list(target_pos),
     )
 
 
 def main() -> None:
+    global p
+    import pybullet as pybullet_module
+    import pybullet_data
+
+    p = pybullet_module
     args = parse_args()
 
-    if args.no_generate:
+    if args.models_root is not None:
+        variants = find_models_under(args.models_root)
+        if not variants:
+            raise RuntimeError(f"没有在 {args.models_root} 下找到 robot.urdf。")
+        if len(variants) > args.count:
+            variants = variants[: args.count]
+    elif args.no_generate:
         variants = find_existing_variants(args.variant_prefix)
         if not variants:
             raise RuntimeError("没有找到可加载的变体。请先去掉 --no-generate 生成模型。")
@@ -182,11 +230,23 @@ def main() -> None:
     model_names: List[str] = []
     model_positions: List[Tuple[float, float, float]] = []
 
+    layout = (
+        grid_positions(len(variants), args.spacing, args.grid_columns)
+        if args.show_all else
+        [(index * args.spacing, 0.0, 0.5) for index in range(len(variants))]
+    )
     for index, (name, urdf_path) in enumerate(variants):
-        start_pos = (index * args.spacing, 0.0, 0.5)
+        start_pos = layout[index]
         start_orientation = p.getQuaternionFromEuler([0.0, 0.0, 0.0])
-        robot_id = p.loadURDF(str(urdf_path), start_pos, start_orientation)
+        robot_id = p.loadURDF(
+            str(urdf_path), start_pos, start_orientation,
+            useFixedBase=args.fixed_base,
+        )
         lock_robot_joints(robot_id)
+        p.addUserDebugText(
+            name, [start_pos[0], start_pos[1], start_pos[2] + 0.42],
+            textColorRGB=[0.05, 0.05, 0.05], textSize=1.15,
+        )
         model_ids.append(robot_id)
         model_names.append(name)
         model_positions.append(start_pos)
@@ -200,7 +260,14 @@ def main() -> None:
                 set_robot_alpha(rid, 1.0 if idx == active_index else 0.12)
             else:
                 set_robot_alpha(rid, 1.0)
-        focus_camera(model_positions[active_index])
+        if single_focus:
+            focus_camera(model_positions[active_index])
+        else:
+            array_extent = args.spacing * max(
+                min(args.grid_columns, len(model_ids)),
+                int(math.ceil(len(model_ids) / max(args.grid_columns, 1))),
+            )
+            focus_camera((0.0, 0.0, 0.15), distance=max(4.0, array_extent * 1.35), pitch=-48.0)
         print(f"当前模型: {active_index + 1}/{len(model_ids)} -> {model_names[active_index]}")
 
     apply_visibility()

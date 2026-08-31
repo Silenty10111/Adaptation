@@ -48,6 +48,7 @@ from adaptation.symmetry import integrate_dynamic_symmetry
 from adaptation.wbc import run_centroidal_wbc
 from adaptation.estimator import OnlineStateEstimator, make_observation
 from adaptation.sim import _RobotSimCtx
+from adaptation.phase import leg_phase_state, resolve_duty_factors, resolve_phase_offsets
 
 _DT = 1.0 / 60.0
 
@@ -91,6 +92,8 @@ def run_episode_with_online(
     group_a = topo["groups"]["group_a"]
     group_b = topo["groups"]["group_b"]
     group_c = topo["groups"].get("group_c", [])
+    phase_offsets = resolve_phase_offsets(plan, ctx.triplets)
+    duty_factors, _ = resolve_duty_factors(plan, ctx.triplets)
 
     base_per_amp = {str(k): float(v) for k, v in topo.get("per_leg_stride_amplitudes", {}).items()}
     if "_per_amp_override" in plan:
@@ -115,9 +118,10 @@ def run_episode_with_online(
     yaw_acc:   List[float] = []
     touchdown_ramp: Dict[int, int] = {}
     sim_time = 0.0
+    base_phase = 0.0
+    gait_frequency = float(plan.get("cpg", {}).get("frequency_hz", GAIT_FREQUENCY))
 
     for step in range(n_steps):
-        phase_now = 2.0 * math.pi * GAIT_FREQUENCY * sim_time
         targets = ctx.stand_ev.copy()
 
         # ── 从在线估计器获取当前自适应修正 ──────────────────────────────
@@ -134,15 +138,8 @@ def run_episode_with_online(
                 targets[j["swing_idx"]] = _rtj(j["swing_lower"], j["swing_upper"], 0.5)
                 continue
 
-            if lid in group_b:
-                lg_ph = phase_now + math.pi
-            elif lid in group_a:
-                lg_ph = phase_now
-            else:
-                lg_ph = 0.0
-
-            sw = float(math.sin(lg_ph * freq_scale))
-            alpha = _ss(-0.30, 0.30, sw)
+            state = leg_phase_state(base_phase, lid, phase_offsets, duty_factors)
+            sw, alpha = state.fore_aft, state.lift
             fv = ctx.fmap.get(lid, np.zeros(2))
             dsign = -1.0 if float(np.dot(fv, lat)) > 0.0 else 1.0
 
@@ -155,7 +152,7 @@ def run_episode_with_online(
             dr = _sd + (_swd - _sd) * alpha
             sr = 0.5 + eff_amp * dsign * sw
 
-            is_sw = sw > 0.0
+            is_sw = not state.is_stance
             if not is_sw:
                 if lid in touchdown_ramp:
                     touchdown_ramp[lid] += 1
@@ -211,6 +208,7 @@ def run_episode_with_online(
             estimator.step(obs)
 
         sim_time += _DT
+        base_phase += 2.0 * math.pi * gait_frequency * float(freq_scale) * _DT
 
     # 统计
     valid = [v for v in yaw_acc if abs(v) < 20.0]

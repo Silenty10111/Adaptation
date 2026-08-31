@@ -13,6 +13,22 @@ import xml.etree.ElementTree as ET
 ASSET_DIR_NAME = "robot_assets"
 
 
+def _indent_xml(element: ET.Element, level: int = 0) -> None:
+    """Backport ``ElementTree.indent`` for the Isaac Gym Python 3.8 env."""
+    whitespace = "\n" + level * "  "
+    child_whitespace = "\n" + (level + 1) * "  "
+    children = list(element)
+    if children:
+        if not element.text or not element.text.strip():
+            element.text = child_whitespace
+        for child in children:
+            _indent_xml(child, level + 1)
+        if not children[-1].tail or not children[-1].tail.strip():
+            children[-1].tail = whitespace
+    if level and (not element.tail or not element.tail.strip()):
+        element.tail = whitespace
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -26,6 +42,10 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path(ASSET_DIR_NAME) / "generated_robot.urdf",
         help="Output URDF path.",
+    )
+    parser.add_argument(
+        "--allow-unstable", action="store_true",
+        help="Write the URDF even when SSM is below threshold (diagnostic only).",
     )
     return parser.parse_args()
 
@@ -131,7 +151,10 @@ def build_urdf(metadata: dict, output_path: Path, description_path: Path) -> Pat
         add_joint(robot, joint_data)
 
     tree = ET.ElementTree(robot)
-    ET.indent(tree, space="  ")
+    if hasattr(ET, "indent"):
+        ET.indent(tree, space="  ")
+    else:
+        _indent_xml(robot)
     tree.write(output_path, encoding="utf-8", xml_declaration=True)
 
     metadata["urdf_path"] = output_path.relative_to(output_path.parent.parent if output_path.parent.parent.exists() else Path.cwd()).as_posix() if output_path.is_absolute() else output_path.as_posix()
@@ -142,6 +165,7 @@ def build_urdf(metadata: dict, output_path: Path, description_path: Path) -> Pat
 def validate_static_stability_before_export(
     metadata: dict,
     threshold: float = 0.0,
+    allow_unstable: bool = False,
 ) -> None:
     """Secondary CGPM/SSM safety check before writing the URDF file.
 
@@ -150,8 +174,8 @@ def validate_static_stability_before_export(
     robot_description.json is edited manually or produced by an external
     tool that bypassed generate_geometry.py.
 
-    If SSM is below threshold a warning is printed but the URDF is still
-    written — set STRICT_SSM=1 in the environment to abort instead.
+    SSM failure aborts before URDF output by default.  ``allow_unstable`` is
+    an explicit escape hatch for labelled diagnostic assets.
 
     Parameters
     ----------
@@ -177,17 +201,19 @@ def validate_static_stability_before_export(
             "      质心投影在支撑多边形外，机器人设计需调整（调整腿分布或躯干几何）。\n"
             "      请重新运行 generate_geometry.py 后再生成 URDF。"
         )
-        if os.environ.get("STRICT_SSM") == "1":
-            raise SystemExit(msg)
-        else:
+        if allow_unstable and os.environ.get("STRICT_SSM") != "1":
             print(msg)
-            print("[SSM] WARNING: 忽略 SSM 检测，继续生成 URDF。（设 STRICT_SSM=1 以中止）")
+            print("[SSM] WARNING: --allow-unstable 已启用，继续生成诊断 URDF。")
+        else:
+            raise SystemExit(msg)
 
 
 def main() -> None:
     args = parse_args()
     metadata = load_metadata(args.description)
-    validate_static_stability_before_export(metadata, threshold=0.03)
+    validate_static_stability_before_export(
+        metadata, threshold=0.03, allow_unstable=args.allow_unstable,
+    )
     output_path = build_urdf(metadata, args.output, args.description)
     print(f"URDF written to: {output_path}")
 

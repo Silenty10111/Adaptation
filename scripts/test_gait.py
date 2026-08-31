@@ -17,9 +17,18 @@ import math
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
+
+from adaptation.diagnostics import diagnose_trajectory_only
+from adaptation.phase import (
+    DEFAULT_DUTY_FACTOR,
+    leg_phase_state,
+    phase_state,
+    resolve_duty_factors,
+    resolve_phase_offsets,
+)
 
 
 # ===========================================================================
@@ -36,6 +45,15 @@ import numpy as np
 # ===========================================================================
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ROBOT_MODEL_PATH = REPO_ROOT / "batch_results/20260818_131804/robot_05_seed350292"
+
+# Viewer gait defaults.  These match the controller used by the validated
+# long-horizon simulations rather than the older symmetric sine executor.
+DEFAULT_SWING_RATIO_AMPLITUDE = 0.32
+# A 0.10 rad lift produces about 3--5 cm unloaded foot clearance on the
+# generated morphology family.  Larger values look dramatic but leave too
+# little tripod support and caused progressive yaw in long-horizon tests.
+SWING_LIFT_DELTA_RAD = 0.10
+DEFAULT_GAIT_EXECUTOR = "step_cycle"
 
 
 TARGET_PYTHON = "/data/conda/envs/unitree-rl/bin/python"
@@ -297,6 +315,12 @@ def _swing_lift_profile(swing_progress: float) -> float:
     return float(math.sin(math.pi * swing_progress))
 
 
+def gait_wave(phase_rad: float, duty_factor: float) -> tuple[float, float]:
+    """Backward-compatible wrapper around the shared periodic scheduler."""
+    state = phase_state(phase_rad, duty_factor)
+    return state.fore_aft, state.lift
+
+
 def quat_to_euler(w: float, x: float, y: float, z: float) -> tuple:
     """Convert quaternion (w,x,y,z) to roll, pitch, yaw in radians."""
     sinr = 2.0 * (w * x + y * z)
@@ -347,6 +371,25 @@ def draw_cross(gym, viewer, env, gymapi, cx: float, cy: float,
     ], dtype=np.float32)
     colors = np.array([rgb, rgb], dtype=np.float32)
     gym.add_lines(viewer, env, 2, verts, colors)
+
+
+def draw_trail(gym, viewer, env, points: List[List[float]],
+               z: float = 0.018, rgb: Optional[List[float]] = None,
+               max_segments: int = 600) -> None:
+    """Draw a decimated world-frame body trail so motion remains obvious."""
+    if len(points) < 2:
+        return
+    color = rgb or [0.85, 0.05, 0.85]
+    stride = max(1, math.ceil((len(points) - 1) / max_segments))
+    sampled = points[::stride]
+    if sampled[-1] is not points[-1]:
+        sampled.append(points[-1])
+    verts = np.array([
+        [a[0], a[1], z, b[0], b[1], z]
+        for a, b in zip(sampled[:-1], sampled[1:])
+    ], dtype=np.float32)
+    colors = np.tile(np.asarray(color, dtype=np.float32), (len(verts), 1))
+    gym.add_lines(viewer, env, len(verts), verts, colors)
 
 
 def get_body_xy(gym, env, actor, gymapi) -> List[float]:
@@ -433,19 +476,6 @@ def apply_online_yaw_correction(
 # Gait control
 # ---------------------------------------------------------------------------
 
-def leg_group_phase(leg_id: int, group_a: List[int], group_b: List[int],
-                    base_phase: float) -> float:
-    if leg_id in group_b:
-        return base_phase + float(np.pi)
-    if leg_id in group_a:
-        return base_phase
-    # Legs not in any group (group_c passive legs or unassigned):
-    # return a phase whose sin is always 0 by convention — caller must detect
-    # them separately; returning NaN here would break callers, so return
-    # a canary value of exactly 0.0 (sin(0)=0 = neutral stance).
-    return 0.0
-
-
 def foot_xy_map(description: dict) -> Dict[int, np.ndarray]:
     mapping: Dict[int, np.ndarray] = {}
     for link in description.get("links", []):
@@ -454,6 +484,42 @@ def foot_xy_map(description: dict) -> Dict[int, np.ndarray]:
         origin = np.asarray(link.get("default_world_origin", [0.0, 0.0, 0.0]), dtype=float)
         mapping[int(link["leg_id"])] = origin[:2]
     return mapping
+
+
+def gait_stance_weights(
+    leg_ids: List[int], gait_plan: dict, sim_time: float, gait_freq: float,
+    phase_offsets: Dict[int, float], duty_factors: Dict[int, float],
+) -> Dict[int, float]:
+    """Return 1 for grounded legs and 0 at maximum swing clearance."""
+    groups = gait_plan.get("topology", {}).get("groups", {})
+    group_c = set(groups.get("group_c", []))
+    phase = 2.0 * math.pi * max(gait_freq, 0.02) * sim_time
+    weights: Dict[int, float] = {}
+    for leg_id in leg_ids:
+        if leg_id in group_c:
+            weights[leg_id] = 1.0
+            continue
+        state = leg_phase_state(phase, leg_id, phase_offsets, duty_factors)
+        weights[leg_id] = 1.0 - state.lift
+    return weights
+
+
+def add_leveling_bias(
+    targets: np.ndarray, triplets: Dict[int, dict],
+    level_bias: Dict[int, float], stance_weights: Dict[int, float],
+    lower: np.ndarray, upper: np.ndarray,
+) -> np.ndarray:
+    """Apply gentle roll/pitch correction mainly through stance legs."""
+    adjusted = targets.copy()
+    for leg_id, joints in triplets.items():
+        bias = level_bias.get(leg_id, 0.0) * stance_weights.get(leg_id, 1.0)
+        adjusted[joints["lift_idx"]] += (
+            0.25 * bias * (joints["lift_upper"] - joints["lift_lower"])
+        )
+        adjusted[joints["drop_idx"]] += (
+            0.65 * bias * (joints["drop_upper"] - joints["drop_lower"])
+        )
+    return np.clip(adjusted, lower, upper)
 
 
 def build_gait_targets(
@@ -472,6 +538,10 @@ def build_gait_targets(
     per_leg_stride_amplitudes: Optional[Dict[str, float]] = None,
     touchdown_ramp: Optional[Dict[int, int]] = None,
     touchdown_ramp_steps: int = 25,
+    gait_mode: str = "alternating",
+    duty_factor: float = DEFAULT_DUTY_FACTOR,
+    phase_offsets: Optional[Dict[int, float]] = None,
+    per_leg_duty_factors: Optional[Dict[int, float]] = None,
 ) -> np.ndarray:
     """
     构造每步的关节目标位置。
@@ -500,6 +570,18 @@ def build_gait_targets(
     lateral_axis = np.array([-forward_axis[1], forward_axis[0]], dtype=float)
 
     amp_map: Dict[str, float] = per_leg_stride_amplitudes or {}
+    resolved_offsets = (
+        phase_offsets if phase_offsets is not None
+        else resolve_phase_offsets(gait_plan, active_swing_legs)
+    )
+    if per_leg_duty_factors is not None:
+        resolved_duties = per_leg_duty_factors
+    elif "duty_factor" in gait_plan.get("cpg", {}):
+        resolved_duties, _ = resolve_duty_factors(gait_plan, active_swing_legs)
+    else:
+        resolved_duties, _ = resolve_duty_factors(
+            {"cpg": {"duty_factor": duty_factor}}, active_swing_legs
+        )
 
     for leg_id, joints in triplets.items():
         # ── Group-c passive legs: swing-only micro-push with no lift change ──────
@@ -515,11 +597,10 @@ def build_gait_targets(
                 joints["swing_lower"], joints["swing_upper"], 0.5)
             continue
 
-        lg_phase = leg_group_phase(leg_id, group_a, group_b, phase)
-        swing_wave = float(np.sin(lg_phase))
-        # Quintic smoothstep: C²-continuous stance↔swing transition (no acceleration jump).
-        # Widened window ±0.35 → ~37 % of cycle in transition (≈22 steps at 0.85 Hz / 60 fps).
-        swing_alpha = smoothstep(-0.35, 0.35, swing_wave)
+        leg_state = leg_phase_state(
+            phase, leg_id, resolved_offsets, resolved_duties,
+        )
+        swing_wave, swing_alpha = leg_state.fore_aft, leg_state.lift
 
         foot_xy_vec = fmap.get(leg_id, np.zeros(2, dtype=float))
         # Use lateral position (perpendicular to forward) to decide swing rotation sense.
@@ -532,18 +613,19 @@ def build_gait_targets(
         leg_stride_scale = float(amp_map.get(str(leg_id), 1.0))
         effective_amp = swing_amp * leg_stride_scale
 
-        # Lift/drop follow swing_alpha linearly — quintic smoothstep already gives
-        # C² continuity.  A bell-shaped lift profile (sin(π·α)) was tried but caused
-        # foot-drag during the transition window, producing backward thrust.
+        # The lift target is above the stance target; drop stays close to its
+        # neutral support angle.  This prevents the lower link folding under
+        # the body and makes the return swing visibly leave the ground.
         lift_r = stance_lift + (swing_lift - stance_lift) * swing_alpha
         drop_r = stance_drop + (swing_drop - stance_drop) * swing_alpha
-        # Swing: sinusoidal oscillation around neutral
         swing_r = 0.5 + effective_amp * dir_sign * swing_wave
 
         # ── 触地淡入滤波（Touchdown ramp-up） ───────────────────────────────
+        # A short contact ramp prevents an abrupt full-load transfer when the
+        # returning tripod touches down.  It is used by the validated
+        # step-cycle controller; the smooth sine executor does not need it.
         if touchdown_ramp is not None:
-            is_swing = swing_wave > 0.0  # sin > 0 → 摆动相
-            was_ramping = leg_id in touchdown_ramp
+            is_swing = not leg_state.is_stance
             if not is_swing:
                 # 支撑相：若之前处于摆动 → 开始淡入计数
                 if leg_id not in touchdown_ramp:
@@ -612,8 +694,22 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--gpu-pipeline", action="store_true",
                    help="Enable GPU rendering pipeline (disabled by default).")
     p.add_argument("--body-height", type=float, default=0.50)
-    p.add_argument("--gait-frequency", type=float, default=0.85)
-    p.add_argument("--swing-ratio-amplitude", type=float, default=0.26)
+    p.add_argument(
+        "--gait-frequency", type=float,
+        help="Override the morphology plan frequency (default: use plan value).",
+    )
+    p.add_argument(
+        "--duty-factor", type=float,
+        help="Override stance fraction of each cycle (default: use plan value).",
+    )
+    p.add_argument(
+        "--gait-executor", choices=("smooth_sine", "step_cycle"),
+        default=DEFAULT_GAIT_EXECUTOR,
+        help=("Joint trajectory executor. step_cycle is the visually distinct "
+              "default; smooth_sine is retained for comparison."),
+    )
+    p.add_argument("--swing-ratio-amplitude", type=float,
+                   default=DEFAULT_SWING_RATIO_AMPLITUDE)
     p.add_argument("--swing-lift-ratio", type=float, default=0.78)
     p.add_argument("--stance-lift-ratio", type=float, default=0.05)
     p.add_argument("--swing-drop-ratio", type=float, default=0.38)
@@ -659,11 +755,37 @@ def main() -> int:
           f"/ -{gait_plan['direction_scores']['negative']:.4f}")
     print(f"  drive_resultant_xy         = {gait_plan['drive_resultant_xy']}")
     topo = gait_plan["topology"]
+    cpg = gait_plan.get("cpg", {})
+    gait_mode = str(cpg.get("mode", "alternating"))
+    gait_frequency = float(
+        args.gait_frequency
+        if args.gait_frequency is not None
+        else cpg.get("frequency_hz", 0.85)
+    )
+    execution_plan = dict(gait_plan)
+    execution_cpg = dict(cpg)
+    if args.duty_factor is not None:
+        execution_cpg["duty_factor"] = args.duty_factor
+    execution_plan["cpg"] = execution_cpg
+    phase_offsets = resolve_phase_offsets(execution_plan, topo["groups"]["group_a"] + topo["groups"]["group_b"])
+    per_leg_duty_factors, duty_diagnostics = resolve_duty_factors(
+        execution_plan, topo["groups"]["group_a"] + topo["groups"]["group_b"],
+    )
+    duty_factor = float(
+        next(iter(per_leg_duty_factors.values()), DEFAULT_DUTY_FACTOR)
+    )
     print(f"  group_a ({len(topo['groups']['group_a'])} legs): {topo['groups']['group_a']}")
     print(f"  group_b ({len(topo['groups']['group_b'])} legs): {topo['groups']['group_b']}")
     if topo["inhibition_rules"]:
         for r in topo["inhibition_rules"]:
             print(f"  [INHIBIT] leg {r['leg_id']}: {r['reason']}")
+    print(f"  cpg                        = {gait_mode}, "
+          f"{gait_frequency:.2f} Hz, duty={duty_factor:.2f}")
+    if args.gait_executor != "step_cycle":
+        print("  [Phase] smooth_sine is deprecated; using unified duty-factor executor")
+    print("  trajectory executor        = unified_phase")
+    for message in duty_diagnostics:
+        print(f"  [Phase] {message}")
 
     # ---- Isaac Gym setup ----------------------------------------------------
     gym = gymapi.acquire_gym()
@@ -776,6 +898,7 @@ def main() -> int:
         ).astype(np.float32)
 
         triplets = resolve_joint_triplets(gym, env, actor, description)
+        fmap = foot_xy_map(description)
 
         # group_c passive legs keep default friction — they serve as lateral anchors.
         group_c_topo = topo.get("groups", {}).get("group_c", [])
@@ -826,6 +949,11 @@ def main() -> int:
         dof_states["pos"] = stand_targets
         dof_states["vel"].fill(0.0)
         gym.set_actor_dof_states(env, actor, dof_states, gymapi.STATE_ALL)
+        # Preserve an exactly level articulated pose.  Warm-up contact forces
+        # can otherwise leave a small initial yaw/roll that the gait amplifies.
+        initial_rb_states = np.copy(
+            gym.get_actor_rigid_body_states(env, actor, gymapi.STATE_ALL),
+        )
 
         print(f"[OK] Asset loaded: {dof_count} DOFs, "
               f"{gym.get_asset_rigid_body_count(asset)} bodies")
@@ -861,10 +989,51 @@ def main() -> int:
                 gym.fetch_results(sim, True)
             print("[HOLD] Stabilisation complete.")
 
+        # Return to the level origin after sag calibration, then allow the
+        # calibrated stance to settle with per-leg roll/pitch compensation.
+        dof_states = gym.get_actor_dof_states(env, actor, gymapi.STATE_ALL)
+        dof_states["pos"] = stand_targets
+        dof_states["vel"].fill(0.0)
+        gym.set_actor_dof_states(env, actor, dof_states, gymapi.STATE_ALL)
+        rb_reset = np.copy(initial_rb_states)
+        rb_reset["pose"]["p"][0]["x"] = 0.0
+        rb_reset["pose"]["p"][0]["y"] = 0.0
+        rb_reset["pose"]["p"][0]["z"] = float(args.body_height)
+        rb_reset["pose"]["r"][0]["x"] = 0.0
+        rb_reset["pose"]["r"][0]["y"] = 0.0
+        rb_reset["pose"]["r"][0]["z"] = 0.0
+        rb_reset["pose"]["r"][0]["w"] = 1.0
+        rb_reset["vel"]["linear"].fill(0.0)
+        rb_reset["vel"]["angular"].fill(0.0)
+        gym.set_actor_rigid_body_states(env, actor, rb_reset, gymapi.STATE_ALL)
 
+        x_extent = max((abs(float(v[0])) for v in fmap.values()), default=1.0)
+        y_extent = max((abs(float(v[1])) for v in fmap.values()), default=1.0)
+        level_bias = {leg_id: 0.0 for leg_id in triplets}
+        for _ in range(90):
+            level_targets = stand_targets.copy()
+            for leg_id, joints in triplets.items():
+                bias = level_bias.get(leg_id, 0.0)
+                level_targets[joints["lift_idx"]] += (
+                    0.25 * bias * (joints["lift_upper"] - joints["lift_lower"])
+                )
+                level_targets[joints["drop_idx"]] += (
+                    0.65 * bias * (joints["drop_upper"] - joints["drop_lower"])
+                )
+            level_targets = np.clip(level_targets, finite_lower, finite_upper)
+            gym.set_actor_dof_position_targets(env, actor, level_targets)
+            gym.simulate(sim)
+            gym.fetch_results(sim, True)
+            roll, pitch, _ = get_body_attitude(gym, env, actor, gymapi)
+            for leg_id, foot in fmap.items():
+                tilt = (roll * float(foot[1]) / y_extent
+                        - pitch * float(foot[0]) / x_extent)
+                raw = float(np.clip(0.70 * tilt, -0.18, 0.18))
+                level_bias[leg_id] = 0.85 * level_bias.get(leg_id, 0.0) + 0.15 * raw
+        print("[LEVEL] Pose reset and 90-step active levelling complete.")
 
-        print(f"[OK] Gait: {args.gait_frequency} Hz, "
-              f"groups A/B phase-offset = π")
+        print(f"[OK] Gait: topology={gait_mode}, executor=unified_phase, "
+              f"{gait_frequency:.2f} Hz, duty={duty_factor:.2f}")
 
         # ---- Simulation loop -------------------------------------------------
         forward_axis = gait_plan.get("final_forward_axis", [1.0, 0.0])
@@ -877,20 +1046,26 @@ def main() -> int:
             fj = next(iter(triplets.values()))
             lift_range = max(fj["lift_upper"] - fj["lift_lower"], 1e-9)
             drop_range = max(fj["drop_upper"] - fj["drop_lower"], 1e-9)
-            # Use standard push-down ratios: feet_at_ground detection only confirmed
-            # feet are CLOSE to ground, but full drop_r (~0.90) is needed for actual contact.
-            _stance_drop = args.stance_drop_ratio   # typically 0.90
+            # Match the batch-validated controller: neutral joints support the
+            # body and a positive lift change raises the returning leg.  The
+            # previous -0.25 rad target moved the foot down, while drop=0.90
+            # folded the lower link underneath the body.
             _stance_lift = max(0.0, min(1.0, (0.0 - fj["lift_lower"]) / lift_range))
-            _swing_lift  = max(0.0, min(1.0, (-0.25 - fj["lift_lower"]) / lift_range))
-            _swing_drop  = _stance_drop  # keep same drop during swing (no knee-lift)
+            _swing_lift = max(0.0, min(
+                1.0, (SWING_LIFT_DELTA_RAD - fj["lift_lower"]) / lift_range,
+            ))
+            _stance_drop = max(0.0, min(1.0, (0.0 - fj["drop_lower"]) / drop_range))
+            _swing_drop = _stance_drop
             print(f"[Stand] Morphology-adapted lift/drop ratios: "
                   f"stance_lift={_stance_lift:.3f}, swing_lift={_swing_lift:.3f}, "
                   f"stance_drop={_stance_drop:.3f}, swing_drop={_swing_drop:.3f}")
+            print(f"[Clearance] lift joint: 0.000 -> "
+                  f"{SWING_LIFT_DELTA_RAD:+.3f} rad during swing")
         else:
             _stance_lift = args.stance_lift_ratio
-            _swing_lift  = args.swing_lift_ratio
+            _swing_lift = max(args.swing_lift_ratio, _stance_lift + 0.08)
             _stance_drop = args.stance_drop_ratio
-            _swing_drop  = args.swing_drop_ratio
+            _swing_drop = args.swing_drop_ratio
 
         # CPG 每腿步幅缩放因子（来自 adaptation.gait 的 per_leg_stride_amplitudes）
         per_leg_stride_amplitudes: Dict[str, float] = {
@@ -910,22 +1085,26 @@ def main() -> int:
         _height_kI_drop = 0.40  # integral gain for drop ratio (more mechanical advantage)
         _stance_lift_effective = _stance_lift
         _stance_drop_effective = _stance_drop
+        _lift_ratio_min = 0.0 if feet_at_ground else 0.05
+        # Once the body is under load the drop joint needs moderate extension
+        # to preserve ground contact; 0.55 is the validated controller bound.
+        _drop_ratio_min = 0.55
         # ── Yaw PI controller state ─────────────────────────────────────────
         _yaw_error_integral = 0.0
 
         # 触地淡入状态：{leg_id: steps_since_touchdown}，在摆动→支撑切换时初始化为 0
         touchdown_ramp: Dict[int, int] = {}
 
-        # Foot positions in world frame from description (offsets from body)
-        fmap = foot_xy_map(description)
-
         com_trail: List[List[float]] = []   # [x, y, body_yaw]
         yaw_history: List[float] = []        # full body-yaw time series
         correction_log: List[dict] = []      # record of correction activations
         sim_time = 0.0
         dt = sim_params.dt
+        steps_per_cycle = max(1, int(round(1.0 / (gait_frequency * dt))))
         # planned heading from gait plan (constant)
-        planned_yaw_rad = float(np.arctan2(forward_axis[1], forward_axis[0]))
+        # A morphology may translate sideways; do not force its chassis to
+        # rotate onto the translation axis.
+        planned_yaw_rad = float(gait_plan.get("body_yaw_target", 0.0))
 
         if not args.headless:
             viewer = gym.create_viewer(sim, gymapi.CameraProperties())
@@ -951,13 +1130,26 @@ def main() -> int:
                 else:
                     targets = build_gait_targets(
                         description, gait_plan, triplets, stand_targets.copy(), sim_time,
-                        args.gait_frequency, args.swing_ratio_amplitude,
+                        gait_frequency, args.swing_ratio_amplitude,
                         _stance_lift_effective, _swing_lift,
                         _stance_drop_effective, _swing_drop,
                         per_leg_stride_amplitudes=per_leg_stride_amplitudes,
                         touchdown_ramp=touchdown_ramp,
+                        gait_mode="unified_phase",
+                        duty_factor=duty_factor,
+                        phase_offsets=phase_offsets,
+                        per_leg_duty_factors=per_leg_duty_factors,
                     )
-                    gym.set_actor_dof_position_targets(env, actor, targets)
+                stance_weights = gait_stance_weights(
+                    list(triplets), gait_plan, sim_time, gait_frequency,
+                    phase_offsets, per_leg_duty_factors,
+                )
+                targets = add_leveling_bias(
+                    targets if not stand_only else stand_targets,
+                    triplets, level_bias, stance_weights,
+                    finite_lower, finite_upper,
+                )
+                gym.set_actor_dof_position_targets(env, actor, targets)
                 gym.simulate(sim)
                 gym.fetch_results(sim, True)
                 gym.step_graphics(sim)
@@ -966,6 +1158,14 @@ def main() -> int:
                 _, _, body_yaw = get_body_attitude(gym, env, actor, gymapi)
                 com_trail.append([body_xy[0], body_xy[1], body_yaw])
                 yaw_history.append(body_yaw)
+                body_roll, body_pitch, _ = get_body_attitude(gym, env, actor, gymapi)
+                for leg_id, foot in fmap.items():
+                    tilt = (body_roll * float(foot[1]) / y_extent
+                            - body_pitch * float(foot[0]) / x_extent)
+                    raw = float(np.clip(0.70 * tilt, -0.18, 0.18))
+                    level_bias[leg_id] = (
+                        0.90 * level_bias.get(leg_id, 0.0) + 0.10 * raw
+                    )
 
                 # ── Body height compensation (every 120 steps) ─────────────
                 if frame_count % 120 == 0:
@@ -974,9 +1174,25 @@ def main() -> int:
                     _height_integral += 0.03 * z_error  # faster accumulation
                     _height_integral = float(np.clip(_height_integral, -0.15, 0.35))
                     _stance_lift_effective = _stance_lift - _height_kI_lift * _height_integral
-                    _stance_lift_effective = float(np.clip(_stance_lift_effective, 0.05, 0.95))
+                    _stance_lift_effective = float(np.clip(
+                        _stance_lift_effective, _lift_ratio_min, 0.95,
+                    ))
                     _stance_drop_effective = _stance_drop - _height_kI_drop * _height_integral
-                    _stance_drop_effective = float(np.clip(_stance_drop_effective, 0.55, 1.0))
+                    _stance_drop_effective = float(np.clip(
+                        _stance_drop_effective, _drop_ratio_min, 1.0,
+                    ))
+
+                if frame_count % steps_per_cycle == 0 and len(com_trail) > 1:
+                    cycle_start = np.asarray(
+                        com_trail[max(0, len(com_trail) - steps_per_cycle)][:2], dtype=float,
+                    )
+                    cycle_delta = np.asarray(body_xy, dtype=float) - cycle_start
+                    cycle_fwd = float(np.dot(cycle_delta, forward_axis))
+                    cycle_lat = float(np.dot(cycle_delta, lateral_axis))
+                    cycle_z = get_body_z(gym, env, actor, gymapi)
+                    print(f"[Cycle {frame_count // steps_per_cycle:02d}] "
+                          f"forward={cycle_fwd:+.4f} m, lateral={cycle_lat:+.4f} m, "
+                          f"body_z={cycle_z:.3f} m")
 
                 # ── Online yaw correction (every 60 steps ≈ 1 s) ─────────
                 # Primary: proportional feedback on absolute body yaw error.
@@ -1004,13 +1220,32 @@ def main() -> int:
                         fwd_disp = 0.0
                         drift_ratio = 0.0
 
+                    world_delta = (
+                        np.asarray(com_trail[-1][:2], dtype=float)
+                        - np.asarray(com_trail[0][:2], dtype=float)
+                    )
+                    cross_track_error = float(np.dot(world_delta, lateral_axis))
+                    cross_track_velocity = 0.0
+                    if len(com_trail) >= 61:
+                        cross_track_velocity = float(np.dot(
+                            np.asarray(com_trail[-1][:2], dtype=float)
+                            - np.asarray(com_trail[-61][:2], dtype=float),
+                            lateral_axis,
+                        ))
+                    desired_yaw_offset = float(np.clip(
+                        -2.0 * cross_track_error - 0.8 * cross_track_velocity,
+                        -0.40, 0.40,
+                    ))
+                    control_error = yaw_error - desired_yaw_offset
+
                     # ── Combined correction (PI on yaw error) ──────────────
-                    # Always correct when |yaw_error| > 0.5° or drift > 5%
-                    if abs(yaw_error) > 0.0087 or drift_ratio > 0.05:
-                        _yaw_error_integral += 0.02 * yaw_error  # slow integral accumulation
+                    # Heading plus cross-track feedback: asymmetric robots may
+                    # keep a small body yaw yet steadily leave the planned line.
+                    if abs(control_error) > 0.0087 or drift_ratio > 0.05:
+                        _yaw_error_integral += 0.02 * control_error
                         _yaw_error_integral = float(np.clip(_yaw_error_integral, -0.5, 0.5))
                         per_leg_stride_amplitudes, _yaw_error_integral = apply_online_yaw_correction(
-                            _base_amplitudes, gait_plan, yaw_error,
+                            _base_amplitudes, gait_plan, control_error,
                             yaw_error_integral=_yaw_error_integral, kp=1.0, ki=0.3)
                         correction_log.append({
                             "frame": frame_count,
@@ -1019,6 +1254,7 @@ def main() -> int:
                             "drift_ratio": drift_ratio,
                             "lat_disp": lat_disp,
                             "fwd_disp": fwd_disp,
+                            "cross_track_error": cross_track_error,
                         })
 
                     if frame_count % 1200 == 0:
@@ -1034,11 +1270,29 @@ def main() -> int:
                 draw_arrow(gym, viewer, env, gymapi, body_xy, forward_axis,
                            length=1.5, z=0.012, rgb=[1.0, 0.45, 0.0])
 
+                # Magenta: actual world-frame body trajectory.  Blue scale
+                # marks stay fixed on the ground every 0.25 m, making motion
+                # over a single gait cycle perceptible in the viewer.
+                draw_trail(gym, viewer, env, com_trail)
+                trail_origin = np.asarray(com_trail[0][:2], dtype=float)
+                for tick_i in range(-4, 25):
+                    tick_xy = trail_origin + 0.25 * tick_i * np.asarray(forward_axis)
+                    major = (tick_i % 4 == 0)
+                    draw_cross(
+                        gym, viewer, env, gymapi,
+                        float(tick_xy[0]), float(tick_xy[1]),
+                        size=0.055 if major else 0.022,
+                        z=0.003,
+                        rgb=[0.10, 0.25, 0.80] if major else [0.35, 0.45, 0.65],
+                    )
+
                 # 2. Per-leg foot-position markers coloured by group & phase
-                phase_now = 2.0 * np.pi * args.gait_frequency * sim_time
+                phase_now = 2.0 * np.pi * gait_frequency * sim_time
                 for leg_id, joints in triplets.items():
-                    lg_ph = leg_group_phase(leg_id, group_a, group_b, phase_now)
-                    in_swing = float(np.sin(lg_ph)) > 0.0
+                    marker_state = leg_phase_state(
+                        phase_now, leg_id, phase_offsets, per_leg_duty_factors,
+                    )
+                    in_swing = not marker_state.is_stance
                     ft_xy = fmap.get(leg_id, np.zeros(2, dtype=float))
                     fx_w = body_xy[0] + ft_xy[0]
                     fy_w = body_xy[1] + ft_xy[1]
@@ -1114,11 +1368,23 @@ def main() -> int:
             for step in range(max(args.steps, 1)):
                 targets = build_gait_targets(
                     description, gait_plan, triplets, stand_targets.copy(), sim_time,
-                    args.gait_frequency, args.swing_ratio_amplitude,
+                    gait_frequency, args.swing_ratio_amplitude,
                     _stance_lift_effective, _swing_lift,
                     _stance_drop_effective, _swing_drop,
                     per_leg_stride_amplitudes=per_leg_stride_amplitudes,
                     touchdown_ramp=touchdown_ramp,
+                    gait_mode="unified_phase",
+                    duty_factor=duty_factor,
+                    phase_offsets=phase_offsets,
+                    per_leg_duty_factors=per_leg_duty_factors,
+                )
+                stance_weights = gait_stance_weights(
+                    list(triplets), gait_plan, sim_time, gait_frequency,
+                    phase_offsets, per_leg_duty_factors,
+                )
+                targets = add_leveling_bias(
+                    targets, triplets, level_bias, stance_weights,
+                    finite_lower, finite_upper,
                 )
                 gym.set_actor_dof_position_targets(env, actor, targets)
                 gym.simulate(sim)
@@ -1128,6 +1394,14 @@ def main() -> int:
                 _, _, body_yaw = get_body_attitude(gym, env, actor, gymapi)
                 com_trail.append([body_xy[0], body_xy[1], body_yaw])
                 yaw_history.append(body_yaw)
+                body_roll, body_pitch, _ = get_body_attitude(gym, env, actor, gymapi)
+                for leg_id, foot in fmap.items():
+                    tilt = (body_roll * float(foot[1]) / y_extent
+                            - body_pitch * float(foot[0]) / x_extent)
+                    raw = float(np.clip(0.70 * tilt, -0.18, 0.18))
+                    level_bias[leg_id] = (
+                        0.90 * level_bias.get(leg_id, 0.0) + 0.10 * raw
+                    )
 
                 # ── Body height compensation (every 120 steps) ─────────────
                 if (step + 1) % 120 == 0:
@@ -1136,9 +1410,25 @@ def main() -> int:
                     _height_integral += 0.03 * z_error
                     _height_integral = float(np.clip(_height_integral, -0.15, 0.35))
                     _stance_lift_effective = _stance_lift - _height_kI_lift * _height_integral
-                    _stance_lift_effective = float(np.clip(_stance_lift_effective, 0.05, 0.95))
+                    _stance_lift_effective = float(np.clip(
+                        _stance_lift_effective, _lift_ratio_min, 0.95,
+                    ))
                     _stance_drop_effective = _stance_drop - _height_kI_drop * _height_integral
-                    _stance_drop_effective = float(np.clip(_stance_drop_effective, 0.55, 1.0))
+                    _stance_drop_effective = float(np.clip(
+                        _stance_drop_effective, _drop_ratio_min, 1.0,
+                    ))
+
+                if (step + 1) % steps_per_cycle == 0 and len(com_trail) > 1:
+                    cycle_start = np.asarray(
+                        com_trail[max(0, len(com_trail) - steps_per_cycle)][:2], dtype=float,
+                    )
+                    cycle_delta = np.asarray(body_xy, dtype=float) - cycle_start
+                    cycle_fwd = float(np.dot(cycle_delta, forward_axis))
+                    cycle_lat = float(np.dot(cycle_delta, lateral_axis))
+                    cycle_z = get_body_z(gym, env, actor, gymapi)
+                    print(f"[Cycle {(step + 1) // steps_per_cycle:02d}] "
+                          f"forward={cycle_fwd:+.4f} m, lateral={cycle_lat:+.4f} m, "
+                          f"body_z={cycle_z:.3f} m")
 
                 # ── Online yaw correction (every 60 steps ≈ 1 s) ─────────
                 # Primary: proportional feedback on absolute body yaw error.
@@ -1166,12 +1456,30 @@ def main() -> int:
                         fwd_disp = 0.0
                         drift_ratio = 0.0
 
+                    world_delta = (
+                        np.asarray(com_trail[-1][:2], dtype=float)
+                        - np.asarray(com_trail[0][:2], dtype=float)
+                    )
+                    cross_track_error = float(np.dot(world_delta, lateral_axis))
+                    cross_track_velocity = 0.0
+                    if len(com_trail) >= 61:
+                        cross_track_velocity = float(np.dot(
+                            np.asarray(com_trail[-1][:2], dtype=float)
+                            - np.asarray(com_trail[-61][:2], dtype=float),
+                            lateral_axis,
+                        ))
+                    desired_yaw_offset = float(np.clip(
+                        -2.0 * cross_track_error - 0.8 * cross_track_velocity,
+                        -0.40, 0.40,
+                    ))
+                    control_error = yaw_error - desired_yaw_offset
+
                     # ── Combined correction (PI on yaw error) ──────────────
-                    if abs(yaw_error) > 0.0087 or drift_ratio > 0.05:
-                        _yaw_error_integral += 0.02 * yaw_error
+                    if abs(control_error) > 0.0087 or drift_ratio > 0.05:
+                        _yaw_error_integral += 0.02 * control_error
                         _yaw_error_integral = float(np.clip(_yaw_error_integral, -0.5, 0.5))
                         per_leg_stride_amplitudes, _yaw_error_integral = apply_online_yaw_correction(
-                            _base_amplitudes, gait_plan, yaw_error,
+                            _base_amplitudes, gait_plan, control_error,
                             yaw_error_integral=_yaw_error_integral, kp=1.0, ki=0.3)
                         if (step + 1) % 2400 == 0:
                             print(f"[YawFB] f={step+1}  "
@@ -1219,6 +1527,11 @@ def main() -> int:
                     avg_ratio = float(np.mean([c['drift_ratio'] for c in correction_log]))
                     print(f"  avg drift ratio  = {avg_ratio:.4f}")
 
+        episode_diagnostics = diagnose_trajectory_only(
+            com_trail, forward_axis, active_leg_count=len(triplets),
+        )
+        print("[Episode diagnostics: trajectory-only viewer entry]")
+        print(json.dumps(episode_diagnostics, indent=2, ensure_ascii=False))
         print("[OK] Simulation finished.")
         return 0
 

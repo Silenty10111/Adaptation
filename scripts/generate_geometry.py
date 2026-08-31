@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
 
@@ -18,11 +19,28 @@ from shapely.geometry.polygon import orient
 ASSET_DIR_NAME = "robot_assets"
 MESH_DIR_NAME = "meshes"
 
+# Default random-morphology profile.  Keep these values centralized so batch
+# generation, CLI help and regression tests cannot silently drift apart.
+DEFAULT_BODY_LENGTH = 0.90
+DEFAULT_BODY_WIDTH = 0.32
+DEFAULT_BODY_HEIGHT = 0.18
+MIN_EXPLICIT_LEGS = 4
+MAX_EXPLICIT_LEGS = 14
+DEFAULT_LEG_POOL = np.array([8, 9, 10, 11, 12, 13, 14], dtype=int)
+DEFAULT_LEG_PROBABILITIES = np.array(
+    [0.05, 0.10, 0.20, 0.25, 0.20, 0.12, 0.08], dtype=float,
+)
+DEFAULT_LEG_PROBABILITIES /= DEFAULT_LEG_PROBABILITIES.sum()
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--robot-name", default="generated_multileg")
-    parser.add_argument("--num-legs", type=int, default=None, help="When omitted sampled from weighted distribution over [4,10] (peak at 6-8).")
+    parser.add_argument(
+        "--num-legs", type=int, default=None,
+        help=("When omitted, sample the elongated-body profile over [8,14] "
+              "(peak at 10-12); explicit values in [4,14] remain supported."),
+    )
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--leg-placement", choices=("uniform", "random"), default="random")
     parser.add_argument(
@@ -31,9 +49,21 @@ def parse_args() -> argparse.Namespace:
         default="mixed",
         help="Swing legs allow larger lateral sweep; pendulum legs stay close to a single plane.",
     )
-    parser.add_argument("--body-length", type=float, default=0.72)
-    parser.add_argument("--body-width", type=float, default=0.44)
-    parser.add_argument("--body-height", type=float, default=0.18)
+    parser.add_argument("--body-length", type=float, default=DEFAULT_BODY_LENGTH)
+    parser.add_argument("--body-width", type=float, default=DEFAULT_BODY_WIDTH)
+    parser.add_argument("--body-height", type=float, default=DEFAULT_BODY_HEIGHT)
+    parser.add_argument(
+        "--morphology-type",
+        choices=("irregular_rigid", "serial_rigid", "serial_flexible"),
+        default="irregular_rigid",
+        help=("Rigid irregular outline, rigid serial-module outline, or the "
+              "reserved (not yet implemented) flexible serial interface."),
+    )
+    parser.add_argument(
+        "--allow-unstable", action="store_true",
+        help="Export even when the pre-export SSM gate fails (research/debug only).",
+    )
+    parser.add_argument("--ssm-threshold", type=float, default=0.03)
     parser.add_argument("--upper-length", type=float, default=0.28)
     parser.add_argument("--lower-length", type=float, default=0.30)
     parser.add_argument("--joint-radius", type=float, default=0.035)
@@ -125,9 +155,40 @@ def create_irregular_trunk_polygon(length: float, width: float, rng: np.random.G
             and len(polygon.exterior.coords) >= 8
             and polygon_has_concavity(polygon)
         ):
-            return polygon
+            # The CLI dimensions describe the final trunk envelope, not an
+            # ellipse scale that random radial noise may exceed.  Normalize
+            # each accepted outline to the requested, centred AABB.
+            min_x, min_y, max_x, max_y = polygon.bounds
+            vertices[:, 0] = (vertices[:, 0] - 0.5 * (min_x + max_x)) * (
+                length / max(max_x - min_x, 1e-12)
+            )
+            vertices[:, 1] = (vertices[:, 1] - 0.5 * (min_y + max_y)) * (
+                width / max(max_y - min_y, 1e-12)
+            )
+            normalized = orient(Polygon(vertices), sign=1.0)
+            if normalized.is_valid:
+                return normalized
 
     raise RuntimeError("Failed to generate a valid trunk polygon.")
+
+
+def create_serial_rigid_trunk_polygon(length: float, width: float) -> Polygon:
+    """Create a single rigid three-module serial outline with an exact AABB.
+
+    This reserves serial morphology semantics without pretending that the
+    current rigid mesh has flexible inter-module dynamics.
+    """
+    half_l = length / 2.0
+    half_w = width / 2.0
+    neck_x = length / 6.0
+    neck_w = width * 0.32
+    vertices = [
+        (-half_l, -half_w), (-neck_x, -half_w), (-neck_x, -neck_w),
+        (neck_x, -neck_w), (neck_x, -half_w), (half_l, -half_w),
+        (half_l, half_w), (neck_x, half_w), (neck_x, neck_w),
+        (-neck_x, neck_w), (-neck_x, half_w), (-half_l, half_w),
+    ]
+    return orient(Polygon(vertices), sign=1.0)
 
 
 def extrude_trunk_mesh(polygon: Polygon, body_height: float) -> trimesh.Trimesh:
@@ -157,31 +218,16 @@ def compute_mount_points(
     if placement == "uniform":
         distances = np.linspace(0.0, cumulative, count, endpoint=False) + cumulative / (2.0 * count)
     else:
-        cluster_count = int(rng.integers(2, min(5, count) + 1))
-        cluster_centers = rng.uniform(0.0, cumulative, size=cluster_count)
-        cluster_spread = cumulative / (7.0 + 1.5 * cluster_count)
-        distances = []
-        for _ in range(count):
-            center = cluster_centers[int(rng.integers(0, cluster_count))]
-            distance = (center + rng.normal(0.0, cluster_spread)) % cumulative
-            distances.append(distance)
-        distances = np.sort(np.asarray(distances, dtype=float))
-
-        # Minimum arc-gap = upper leg length so feet land at least one
-        # thigh-length apart, giving each foot an independent support region.
-        min_gap = upper_length
-        adjusted: List[float] = []
-        for distance in distances:
-            candidate = float(distance)
-            if adjusted:
-                candidate = max(candidate, adjusted[-1] + min_gap)
-            adjusted.append(candidate)
-
-        overflow = adjusted[-1] - cumulative
-        if overflow > 0.0:
-            adjusted = [value - overflow for value in adjusted]
-
-        distances = np.asarray([value % cumulative for value in adjusted], dtype=float)
+        # Construct *circular* gaps directly.  The previous forward-only
+        # adjustment did not check the wrap-around gap between the last and
+        # first hip, so high-leg-count models could contain a near-coincident
+        # pair at the perimeter seam.
+        min_gap = min(float(upper_length), 0.80 * cumulative / count)
+        residual = max(cumulative - count * min_gap, 0.0)
+        random_gaps = rng.dirichlet(np.ones(count)) * residual
+        gaps = min_gap + random_gaps
+        origin = float(rng.uniform(0.0, cumulative))
+        distances = np.mod(origin + np.r_[0.0, np.cumsum(gaps[:-1])], cumulative)
         distances.sort()
 
     centroid = np.array([polygon.centroid.x, polygon.centroid.y], dtype=float)
@@ -287,6 +333,48 @@ def build_leg_vectors(
     return upper_direction * upper_length, lower_direction * lower_length
 
 
+def coplanarize_lower_leg_vectors(
+    knee_positions: Sequence[Sequence[float]],
+    lower_vectors: Sequence[Sequence[float]],
+) -> Tuple[List[np.ndarray], float]:
+    """Adjust lower-leg directions so all nominal feet share one Z plane.
+
+    Link lengths and each lower leg's horizontal direction are preserved.  The
+    common plane is chosen near the median original foot height and clipped to
+    the intersection of every leg's reachable vertical interval.
+    """
+    knees = [np.asarray(value, dtype=float) for value in knee_positions]
+    lowers = [np.asarray(value, dtype=float) for value in lower_vectors]
+    if len(knees) != len(lowers) or not knees:
+        raise ValueError("knee_positions and lower_vectors must be non-empty and aligned")
+    lengths = [float(np.linalg.norm(value)) for value in lowers]
+    preferred = float(np.median([
+        knee[2] + lower[2] for knee, lower in zip(knees, lowers)
+    ]))
+    lowest_common = max(knee[2] - length for knee, length in zip(knees, lengths))
+    highest_common = min(knee[2] + length for knee, length in zip(knees, lengths))
+    if lowest_common > highest_common + 1e-9:
+        raise ValueError("lower-leg lengths have no common reachable foot plane")
+    target_z = float(np.clip(preferred, lowest_common, highest_common))
+
+    adjusted: List[np.ndarray] = []
+    for knee, lower, length in zip(knees, lowers, lengths):
+        vertical = float(np.clip(target_z - knee[2], -length, length))
+        horizontal_length = math.sqrt(max(length * length - vertical * vertical, 0.0))
+        horizontal = lower[:2]
+        horizontal_norm = float(np.linalg.norm(horizontal))
+        if horizontal_norm <= 1e-12:
+            horizontal_direction = np.array([1.0, 0.0], dtype=float)
+        else:
+            horizontal_direction = horizontal / horizontal_norm
+        adjusted.append(np.array([
+            horizontal_direction[0] * horizontal_length,
+            horizontal_direction[1] * horizontal_length,
+            vertical,
+        ], dtype=float))
+    return adjusted, target_z
+
+
 def select_leg_type(requested_style: str, leg_index: int, rng: np.random.Generator) -> str:
     if requested_style == "mixed":
         return "swing" if (leg_index % 2 == 0 or rng.random() > 0.5) else "pendulum"
@@ -297,7 +385,7 @@ def validate_foot_layout_ssm(
     foot_positions_xy: List[List[float]],
     trunk_com_xy: Sequence[float] = (0.0, 0.0),
     threshold: float = 0.03,
-) -> None:
+) -> Dict[str, object]:
     """SSM pre-check using foot XY positions before any mesh file is written.
 
     Called after all leg vectors are computed but before disk I/O, so a failed
@@ -318,7 +406,8 @@ def validate_foot_layout_ssm(
         from adaptation.stability import compute_ssm
     except ImportError:
         print("[SSM] stability 模块未找到，跳过足端布局预检。")
-        return
+        return {"measured": False, "passed": None, "ssm": None,
+                "reason": "adaptation.stability unavailable"}
 
     def ensure_ccw(polygon_xy: np.ndarray) -> np.ndarray:
         if len(polygon_xy) < 3:
@@ -362,8 +451,10 @@ def validate_foot_layout_ssm(
     if ssm < threshold:
         print(
             f"\n[SSM] 足端布局静态稳定性检验不通过：SSM = {ssm:.4f} m < 阈值 {threshold} m\n"
-            "      ⚠ WARNING: 忽略 SSM 检测，继续生成 STL/JSON 文件。"
+            "      默认将中止导出；仅显式 --allow-unstable 可生成诊断资产。"
         )
+    return {"measured": True, "passed": bool(ssm >= threshold),
+            "ssm": float(ssm), "threshold": float(threshold)}
 
 
 def print_link_summary(link: Dict[str, object]) -> None:
@@ -380,17 +471,31 @@ def print_link_summary(link: Dict[str, object]) -> None:
 
 def assemble_robot(args: argparse.Namespace) -> Dict[str, object]:
     rng = np.random.default_rng(args.seed)
-    # Weighted distribution favouring medium leg counts while preserving rare
-    # low (4) and high (10) morphologies.
-    _LEG_POOL = np.array([4, 5, 6, 7, 8, 9, 10], dtype=int)
-    _LEG_PROB = np.array([0.05, 0.10, 0.20, 0.25, 0.20, 0.12, 0.08], dtype=float)
-    _LEG_PROB /= _LEG_PROB.sum()
-    num_legs = args.num_legs if args.num_legs is not None else int(rng.choice(_LEG_POOL, p=_LEG_PROB))
-    if num_legs < 4 or num_legs > 10:
-        raise ValueError("num_legs must be within [4, 10].")
+    # Batch generation now targets elongated many-legged morphologies.  Low
+    # counts remain explicitly available for standard/amputation experiments,
+    # but are no longer drawn by the default random profile.
+    num_legs = (
+        int(args.num_legs)
+        if args.num_legs is not None
+        else int(rng.choice(DEFAULT_LEG_POOL, p=DEFAULT_LEG_PROBABILITIES))
+    )
+    if num_legs < MIN_EXPLICIT_LEGS or num_legs > MAX_EXPLICIT_LEGS:
+        raise ValueError(
+            f"num_legs must be within [{MIN_EXPLICIT_LEGS}, {MAX_EXPLICIT_LEGS}]."
+        )
+    if args.body_length <= 0.0 or args.body_width <= 0.0 or args.body_height <= 0.0:
+        raise ValueError("body dimensions must be positive")
+    if args.morphology_type == "serial_flexible":
+        raise NotImplementedError(
+            "serial_flexible is a reserved interface; flexible trunk dynamics "
+            "have not been validated in this project"
+        )
 
     assets_root, meshes_root = make_assets_root()
-    polygon = create_irregular_trunk_polygon(args.body_length, args.body_width, rng)
+    if args.morphology_type == "serial_rigid":
+        polygon = create_serial_rigid_trunk_polygon(args.body_length, args.body_width)
+    else:
+        polygon = create_irregular_trunk_polygon(args.body_length, args.body_width, rng)
     trunk_mesh = extrude_trunk_mesh(polygon, args.body_height)
 
     links: List[Dict[str, object]] = []
@@ -435,9 +540,29 @@ def assemble_robot(args: argparse.Namespace) -> Dict[str, object]:
             "swing_limits": swing_limits,
         })
 
+    # Mixed swing/pendulum directions previously produced nominal foot heights
+    # differing by several centimetres.  Make the zero-angle stance physically
+    # realizable before evaluating SSM or exporting meshes.
+    adjusted_lowers, nominal_foot_plane_z = coplanarize_lower_leg_vectors(
+        [spec["knee_world"] for spec in leg_specs],
+        [spec["lower_vector"] for spec in leg_specs],
+    )
+    for spec, adjusted_lower in zip(leg_specs, adjusted_lowers):
+        spec["lower_vector"] = adjusted_lower
+        spec["foot_world"] = spec["knee_world"] + adjusted_lower
+
     # ---- Phase 2: SSM pre-check (before any file is written to disk) ----
     foot_positions_xy = [spec["foot_world"][:2].tolist() for spec in leg_specs]  # type: ignore[index]
-    validate_foot_layout_ssm(foot_positions_xy, trunk_com_xy=[0.0, 0.0])
+    layout_ssm = validate_foot_layout_ssm(
+        foot_positions_xy, trunk_com_xy=[0.0, 0.0],
+        threshold=float(args.ssm_threshold),
+    )
+    if layout_ssm.get("passed") is False and not args.allow_unstable:
+        raise ValueError(
+            f"foot layout SSM {layout_ssm['ssm']:.4f} m is below "
+            f"threshold {layout_ssm['threshold']:.4f} m; use --allow-unstable "
+            "only for an explicitly labelled diagnostic asset"
+        )
 
     # ---- Phase 3: export trunk mesh then all leg meshes ----
     trunk_relative_mesh = f"{MESH_DIR_NAME}/trunk.stl"
@@ -575,6 +700,20 @@ def assemble_robot(args: argparse.Namespace) -> Dict[str, object]:
         "seed": args.seed,
         "density": float(args.density),
         "num_legs": num_legs,
+        "generation_profile": {
+            "name": "elongated_many_leg_v2_coplanar_feet",
+            "leg_count_source": (
+                "explicit" if args.num_legs is not None else "weighted_default_8_to_14"
+            ),
+            "body_aspect_ratio": float(args.body_length / args.body_width),
+            "nominal_foot_plane_z": float(nominal_foot_plane_z),
+        },
+        "morphology_type": args.morphology_type,
+        "requested_body_envelope": {
+            "length": float(args.body_length), "width": float(args.body_width),
+            "height": float(args.body_height),
+        },
+        "layout_ssm_precheck": layout_ssm,
         "asset_root": ASSET_DIR_NAME,
         "mesh_root": MESH_DIR_NAME,
         "preview_mesh": preview_relative_mesh,

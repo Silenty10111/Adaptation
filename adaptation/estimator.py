@@ -45,6 +45,8 @@ from typing import Deque, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from .phase import leg_phase_state, resolve_duty_factors, resolve_phase_offsets
+
 
 # ---------------------------------------------------------------------------
 # 数据结构
@@ -840,15 +842,13 @@ class OnlineStateEstimator:
             # 从步态相位估计哪些腿在支撑相
             freq = float(self._plan.get("cpg", {}).get("frequency_hz", 0.85))
             phase_now = 2.0 * math.pi * freq * obs.sim_time
-            group_a = set(self._plan.get("topology", {}).get("groups", {}).get("group_a", []))
-            group_b = set(self._plan.get("topology", {}).get("groups", {}).get("group_b", []))
+            phase_offsets = resolve_phase_offsets(self._plan, self._all_leg_ids)
+            duty_factors, _ = resolve_duty_factors(self._plan, self._all_leg_ids)
             in_stance: Dict[int, bool] = {}
             for lid in self._all_leg_ids:
-                if lid in group_b:
-                    lg_phase = phase_now + math.pi
-                else:
-                    lg_phase = phase_now
-                in_stance[lid] = math.sin(lg_phase) < 0.0  # 支撑相：sin < 0
+                in_stance[lid] = leg_phase_state(
+                    phase_now, lid, phase_offsets, duty_factors
+                ).is_stance
 
             health_scores = self._health_monitor.update(obs.joint_torques, in_stance)
             self._state.leg_health = health_scores

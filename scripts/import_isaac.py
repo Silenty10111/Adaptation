@@ -13,6 +13,13 @@ from typing import Dict, List
 
 import numpy as np
 
+from adaptation.diagnostics import diagnose_trajectory_only
+from adaptation.phase import (
+    leg_phase_state,
+    resolve_duty_factors,
+    resolve_phase_offsets,
+)
+
 # adaptation.stability module is in the same directory; import lazily so the file
 # still runs without it (warning only).
 try:
@@ -529,14 +536,6 @@ def resolve_joint_triplets(
     return result
 
 
-def leg_group_phase(leg_id: int, group_a: List[int], group_b: List[int], base_phase: float) -> float:
-    if leg_id in group_b:
-        return base_phase + np.pi
-    if leg_id in group_a:
-        return base_phase
-    return base_phase
-
-
 def build_cyclic_dof_targets(
     description: Dict[str, object],
     gait_plan: Dict[str, object],
@@ -547,8 +546,10 @@ def build_cyclic_dof_targets(
 ) -> np.ndarray:
     targets = default_targets.copy()
     phase = 2.0 * np.pi * max(args.gait_frequency, 0.05) * sim_time
-    group_a = list(gait_plan.get("topology", {}).get("groups", {}).get("group_a", []))
-    group_b = list(gait_plan.get("topology", {}).get("groups", {}).get("group_b", []))
+    groups = gait_plan.get("topology", {}).get("groups", {})
+    group_c = set(groups.get("group_c", []))
+    phase_offsets = resolve_phase_offsets(gait_plan, joint_triplets)
+    duty_factors, _ = resolve_duty_factors(gait_plan, joint_triplets)
 
     forward_axis = np.asarray(gait_plan.get("final_forward_axis", [1.0, 0.0]), dtype=float)
     if np.linalg.norm(forward_axis) < 1e-6:
@@ -557,9 +558,11 @@ def build_cyclic_dof_targets(
     foot_map = foot_xy_map(description)
 
     for leg_id, joints in joint_triplets.items():
-        leg_phase = leg_group_phase(leg_id, group_a, group_b, phase)
-        swing_wave = float(np.sin(leg_phase))
-        swing_alpha = max(swing_wave, 0.0)
+        if leg_id in group_c:
+            continue
+        state = leg_phase_state(phase, leg_id, phase_offsets, duty_factors)
+        swing_wave = state.fore_aft
+        swing_alpha = state.lift
 
         foot_xy = foot_map.get(leg_id, np.zeros(2, dtype=float))
         direction_sign = 1.0 if float(np.dot(foot_xy, forward_axis)) >= 0.0 else -1.0
@@ -688,22 +691,22 @@ def main() -> None:
             )
 
             cpg_cfg = gait_plan.get("cpg", {}) if isinstance(gait_plan.get("cpg", {}), dict) else {}
-            phase_offsets = cpg_cfg.get("phase_offsets", {})
-            if not phase_offsets:
-                group_a = list(gait_plan.get("topology", {}).get("groups", {}).get("group_a", []))
-                group_b = list(gait_plan.get("topology", {}).get("groups", {}).get("group_b", []))
-                phase_offsets = {str(lid): 0.0 for lid in group_a}
-                phase_offsets.update({str(lid): float(np.pi) for lid in group_b})
-
             freq_hz = float(cpg_cfg.get("frequency_hz", args.gait_frequency))
-            duty_factor = float(cpg_cfg.get("duty_factor", 0.60))
             leg_ids = sorted(mpc_physics.foot_positions.keys())
+            phase_offsets = resolve_phase_offsets(gait_plan, leg_ids)
+            duty_factors, duty_diagnostics = resolve_duty_factors(gait_plan, leg_ids)
+            for message in duty_diagnostics:
+                print(f"[Phase] {message}")
             cpg = CPGScheduler(
                 leg_ids,
-                {int(k): float(v) for k, v in phase_offsets.items()},
+                phase_offsets,
                 freq_hz,
-                duty_factor,
+                float(cpg_cfg.get("duty_factor", 0.60)),
                 dt=sim_params.dt,
+                per_leg_duty_factors=duty_factors,
+                passive_leg_ids=list(
+                    gait_plan.get("topology", {}).get("groups", {}).get("group_c", [])
+                ),
             )
 
             foot_body_map = resolve_foot_bodies(gym, env, actor)
@@ -723,6 +726,8 @@ def main() -> None:
             print("[WARN] 部分关节名在资产 DOF 中未找到:")
             print(missing_joints)
         print(f"[OK] Loaded in Isaac Gym: {urdf_path}")
+        forward_axis = list(gait_plan.get("final_forward_axis", [1.0, 0.0]))
+        episode_trail: List[List[float]] = []
 
         if not args.headless:
             viewer = gym.create_viewer(sim, gymapi.CameraProperties())
@@ -732,7 +737,6 @@ def main() -> None:
             cam_target = gymapi.Vec3(0.0, 0.0, 0.4)
             gym.viewer_camera_look_at(viewer, env, cam_pos, cam_target)
             print("[OK] Viewer 启动，关闭窗口即可退出。")
-            forward_axis = list(gait_plan.get("final_forward_axis", [1.0, 0.0]))
             sim_time = 0.0
             while not gym.query_viewer_has_closed(viewer):
                 if args.use_mpc and mpc is not None and cpg is not None and mpc_physics is not None:
@@ -805,7 +809,27 @@ def main() -> None:
                     gym.set_actor_dof_position_targets(env, actor, dof_targets)
                 gym.simulate(sim)
                 gym.fetch_results(sim, True)
+                root_states = gym.get_actor_rigid_body_states(
+                    env, actor, gymapi.STATE_POS
+                )
+                if root_states is not None and len(root_states) > 0:
+                    p = root_states["pose"]["p"][0]
+                    q = root_states["pose"]["r"][0]
+                    yaw = math.atan2(
+                        2.0 * (float(q["w"]) * float(q["z"])
+                               + float(q["x"]) * float(q["y"])),
+                        1.0 - 2.0 * (float(q["y"]) ** 2 + float(q["z"]) ** 2),
+                    )
+                    episode_trail.append([
+                        float(p["x"]), float(p["y"]), float(yaw), float(p["z"])
+                    ])
                 sim_time += sim_params.dt
+            episode_diagnostics = diagnose_trajectory_only(
+                episode_trail, forward_axis,
+                active_leg_count=len(joint_triplets),
+            )
+            print("[Episode diagnostics: trajectory-only import entry]")
+            print(json.dumps(episode_diagnostics, indent=2, ensure_ascii=False))
             print("[OK] Headless simulation finished.")
     finally:
         if viewer is not None:

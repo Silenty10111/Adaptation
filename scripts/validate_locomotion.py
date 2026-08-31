@@ -61,10 +61,14 @@ def parse_args():
 
 
 def measure(ctx, plan, steps):
-    trail, axis, yaw = ctx.run_episode(plan, steps, return_yaw_stats=True)
+    trail, axis, yaw, diagnostics = ctx.run_episode(
+        plan, steps, return_yaw_stats=True, return_diagnostics=True,
+        diagnostic_stride=5,
+    )
     metrics = evaluate_trajectory(
         trail, axis, gait_frequency_hz=float(plan.get("cpg", {}).get("frequency_hz", 0.85))
     )
+    metrics["episode_diagnostics"] = diagnostics
     return trail, metrics, yaw
 
 

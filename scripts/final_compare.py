@@ -36,6 +36,7 @@ from adaptation.gait import compute_adaptive_plan
 from adaptation.symmetry import integrate_dynamic_symmetry
 from adaptation.topology import zero_shot_gait_plan
 from adaptation.sim import _RobotSimCtx
+from adaptation.phase import leg_phase_state, resolve_duty_factors, resolve_phase_offsets
 
 _DT = 1.0 / 60.0
 PROBE_STEPS = 480
@@ -61,8 +62,6 @@ def run_online_ekf_episode(ctx, plan, n_steps, description):
     lat = np.array([-fwd[1], fwd[0]], dtype=float)
 
     topo = plan["topology"]
-    group_a = topo["groups"]["group_a"]
-    group_b = topo["groups"]["group_b"]
     group_c = topo["groups"].get("group_c", [])
     base_amps = {str(k): float(v) for k, v in topo.get("per_leg_stride_amplitudes", {}).items()}
 
@@ -79,6 +78,11 @@ def run_online_ekf_episode(ctx, plan, n_steps, description):
         return t * t * (3.0 - 2.0 * t)
 
     from adaptation.sim import GAIT_FREQUENCY, SWING_AMP
+    phase_offsets = resolve_phase_offsets(plan, ctx.triplets)
+    duty_factors, duty_diagnostics = resolve_duty_factors(plan, ctx.triplets)
+    for diagnostic in duty_diagnostics:
+        print(f"[FinalCompare] {diagnostic}")
+    gait_frequency = float(plan.get("cpg", {}).get("frequency_hz", GAIT_FREQUENCY))
     _sl, _swl, _sd, _swd = ctx._sl, ctx._swl, ctx._sd, ctx._swd
 
     com_trail: List[List[float]] = []
@@ -87,7 +91,7 @@ def run_online_ekf_episode(ctx, plan, n_steps, description):
     sim_time = 0.0
 
     for step in range(n_steps):
-        phase_now = 2.0 * math.pi * GAIT_FREQUENCY * sim_time
+        phase_now = 2.0 * math.pi * gait_frequency * sim_time
         targets = ctx.stand_ev.copy()
 
         adapt = estimator.get_state()
@@ -100,12 +104,11 @@ def run_online_ekf_episode(ctx, plan, n_steps, description):
                 targets[j["swing_idx"]] = _rtj(j["swing_lower"], j["swing_upper"], 0.5)
                 continue
 
-            if lid in group_b: lg_ph = phase_now + math.pi
-            elif lid in group_a: lg_ph = phase_now
-            else: lg_ph = 0.0
-
-            sw_val = float(math.sin(lg_ph))
-            alpha = _ss(-0.30, 0.30, sw_val)
+            phase_state = leg_phase_state(
+                phase_now, lid, phase_offsets, duty_factors
+            )
+            sw_val = phase_state.fore_aft
+            alpha = phase_state.lift
             fv = ctx.fmap.get(lid, np.zeros(2))
             dsign = -1.0 if float(np.dot(fv, lat)) > 0.0 else 1.0
 
@@ -117,7 +120,7 @@ def run_online_ekf_episode(ctx, plan, n_steps, description):
             dr = _sd + (_swd - _sd) * alpha
             sr = 0.5 + eff_amp * dsign * sw_val
 
-            is_sw = sw_val > 0.0
+            is_sw = not phase_state.is_stance
             if not is_sw:
                 if lid in touchdown_ramp:
                     touchdown_ramp[lid] += 1

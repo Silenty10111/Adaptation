@@ -22,6 +22,8 @@ from typing import Dict, List
 
 import numpy as np
 
+from adaptation.phase import leg_phase_state, resolve_duty_factors, resolve_phase_offsets
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -97,15 +99,6 @@ def compute_gait_plan(description: dict) -> dict:
 # Target computation (replicates build_gait_targets without Isaac Gym)
 # ---------------------------------------------------------------------------
 
-def leg_group_phase(leg_id: int, group_a: List[int], group_b: List[int],
-                    base_phase: float) -> float:
-    if leg_id in group_b:
-        return base_phase + float(np.pi)
-    if leg_id in group_a:
-        return base_phase
-    return base_phase
-
-
 def compute_cycle_targets(
     description: dict,
     gait_plan: dict,
@@ -139,6 +132,9 @@ def compute_cycle_targets(
 
     group_a = list(gait_plan.get("topology", {}).get("groups", {}).get("group_a", []))
     group_b = list(gait_plan.get("topology", {}).get("groups", {}).get("group_b", []))
+    group_c = set(gait_plan.get("topology", {}).get("groups", {}).get("group_c", []))
+    phase_offsets = resolve_phase_offsets(gait_plan, leg_ids)
+    duty_factors, _ = resolve_duty_factors(gait_plan, leg_ids)
     forward_axis = np.asarray(
         gait_plan.get("final_forward_axis", [1.0, 0.0]), dtype=float,
     )
@@ -165,9 +161,17 @@ def compute_cycle_targets(
 
         for col, time_val in enumerate(t):
             phase = 2.0 * np.pi * gait_freq * time_val
-            lg_ph = leg_group_phase(leg_id, group_a, group_b, phase)
-            swing_wave = float(np.sin(lg_ph))
-            swing_alpha = smoothstep(-0.05, 0.05, swing_wave)
+            if leg_id in group_c:
+                swing_wave = 0.0
+                swing_alpha = 0.0
+                is_swing = False
+            else:
+                leg_state = leg_phase_state(
+                    phase, leg_id, phase_offsets, duty_factors
+                )
+                swing_wave = leg_state.fore_aft
+                swing_alpha = leg_state.lift
+                is_swing = not leg_state.is_stance
 
             lift_r = stance_lift + (swing_lift - stance_lift) * swing_alpha
             drop_r = stance_drop + (swing_drop - stance_drop) * swing_alpha
@@ -182,7 +186,7 @@ def compute_cycle_targets(
             drop_targets[row, col] = ratio_to_joint(
                 limits["drop"]["lower"], limits["drop"]["upper"], drop_r,
             )
-            phase_state[row, col] = float(swing_wave > 0.0)
+            phase_state[row, col] = float(is_swing)
 
     return {
         "t": t,
